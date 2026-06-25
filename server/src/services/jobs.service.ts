@@ -1,13 +1,20 @@
 import { EventEmitter } from 'node:events';
-import { copyFile } from 'node:fs/promises';
+import { copyFile, unlink } from 'node:fs/promises';
 import path from 'node:path';
-import { jobsRepo, type Job, type JobKind } from '../db/repositories/jobs.js';
+import { jobsRepo, parseJobPayload, setPendingJobListener, type Job, type JobKind } from '../db/repositories/jobs.js';
 import { videosRepo } from '../db/repositories/videos.js';
 import { settingsRepo } from '../db/repositories/settings.js';
 import { config } from '../config.js';
 import { errorMessage, isRecoverableDbError, reloadDb } from '../db/connection.js';
 import { extractVideoInfo, downloadToPath, downloadMp3ToPath } from './extractor.service.js';
+import { sanitizeForFilename } from '../utils/filenames.js';
 import { writeSidecarForVideo } from '../utils/sidecar.js';
+
+// How long the worker sleeps when the queue is empty. New pending jobs wake it
+// immediately (see setPendingJobListener), so this is only a safety heartbeat.
+const IDLE_HEARTBEAT_MS = 2000;
+// Pause after a crashed step so a persistent failure can't spin the loop.
+const ERROR_BACKOFF_MS = 1000;
 
 export interface JobEvent {
   job: Job;
@@ -26,20 +33,6 @@ function emit(jobId: number): void {
   if (job) bus.emit('change', { job });
 }
 
-interface IngestPayload {
-  outputMp4?: boolean;
-  downloadMp3?: boolean;
-  url: string;
-}
-
-function sanitizeForFilename(name: string): string {
-  return name
-    // eslint-disable-next-line no-control-regex
-    .replace(/[<>:"|?*\x00-\x1f\\/]/g, '_')
-    .replace(/[. ]+$/g, '')
-    .trim();
-}
-
 function outputFilename(localPath: string, title: string | null | undefined): string {
   const sanitized = title ? sanitizeForFilename(title) : '';
   return sanitized ? `${sanitized}${path.extname(localPath)}` : path.basename(localPath);
@@ -47,7 +40,8 @@ function outputFilename(localPath: string, title: string | null | undefined): st
 
 async function runExtractMetadata(job: Job): Promise<void> {
   const videoId = job.video_id!;
-  const payload = JSON.parse(job.payload ?? '{}') as IngestPayload;
+  const payload = parseJobPayload(job, 'extract_metadata');
+  if (!payload.url) throw new Error('extract_metadata job has no url in payload');
 
   jobsRepo.setProgress(job.id, 0.1);
   emit(job.id);
@@ -86,15 +80,30 @@ async function runExtractMetadata(job: Job): Promise<void> {
 
 async function runDownloadVideo(job: Job): Promise<void> {
   const videoId = job.video_id!;
-  const payload = JSON.parse(job.payload ?? '{}') as IngestPayload & { title?: string | null };
+  const payload = parseJobPayload(job, 'download_video');
+  if (!payload.url) throw new Error('download_video job has no url in payload');
 
-  jobsRepo.setProgress(job.id, 0.2);
+  jobsRepo.setProgress(job.id, 0.01);
   emit(job.id);
 
   const settings = settingsRepo.getMany(['download_path', 'ffmpeg_path']);
   const ffmpegPath = settings['ffmpeg_path'] || config.ffmpegPath;
+  const currentLocalPath = videosRepo.findById(videoId)?.local_path;
 
-  const localPath = await downloadToPath(videoId, payload.url, config.videosDir, ffmpegPath);
+  // yt-dlp reports each download phase 0→100% (a merged format downloads video
+  // then audio); keep the bar monotonic and only persist meaningful steps.
+  let lastReported = 0.01;
+  const onProgress = (fraction: number) => {
+    const next = Math.min(0.99, fraction);
+    if (next - lastReported < 0.01) return;
+    lastReported = next;
+    jobsRepo.setProgress(job.id, next);
+    emit(job.id);
+  };
+
+  const localPath = await downloadToPath(
+    videoId, payload.url, config.videosDir, ffmpegPath, payload.title, currentLocalPath, onProgress,
+  );
 
   videosRepo.update(videoId, { localPath });
   await writeSidecarForVideo(videoId);
@@ -106,13 +115,14 @@ async function runDownloadVideo(job: Job): Promise<void> {
     jobsRepo.enqueue({
       videoId,
       kind: 'copy_to_output',
-      payload: { localPath, title: payload.title, outputDir: settings['download_path'] },
+      payload: { localPath, title: payload.title ?? null, outputDir: settings['download_path'] },
     });
   }
 }
 
 async function runDownloadMp3(job: Job): Promise<void> {
-  const payload = JSON.parse(job.payload ?? '{}') as IngestPayload;
+  const payload = parseJobPayload(job, 'download_mp3');
+  if (!payload.url) throw new Error('download_mp3 job has no url in payload');
   const settings = settingsRepo.getMany(['download_path', 'ffmpeg_path']);
   const outputPath = settings['download_path'];
   if (!outputPath) {
@@ -130,12 +140,15 @@ async function runDownloadMp3(job: Job): Promise<void> {
 }
 
 async function runCopyToOutput(job: Job): Promise<void> {
-  const payload = JSON.parse(job.payload ?? '{}') as {
-    localPath: string;
-    title: string | null;
-    outputDir: string;
-  };
-  const dest = path.join(payload.outputDir, outputFilename(payload.localPath, payload.title));
+  const payload = parseJobPayload(job, 'copy_to_output');
+  if (!payload.localPath) throw new Error('copy_to_output job has no localPath in payload');
+
+  // Jobs enqueued outside the download chain carry no outputDir; resolve it
+  // from settings at run time.
+  const outputDir = payload.outputDir || settingsRepo.getMany(['download_path'])['download_path'];
+  if (!outputDir) throw new Error('download_path setting is not configured');
+
+  const dest = path.join(outputDir, outputFilename(payload.localPath, payload.title));
   await copyFile(payload.localPath, dest);
   jobsRepo.markComplete(job.id);
   emit(job.id);
@@ -143,7 +156,8 @@ async function runCopyToOutput(job: Job): Promise<void> {
 
 async function runFetchThumbnail(job: Job): Promise<void> {
   const videoId = job.video_id!;
-  const payload = JSON.parse(job.payload ?? '{}') as { url: string };
+  const payload = parseJobPayload(job, 'fetch_thumbnail');
+  if (!payload.url) throw new Error('fetch_thumbnail job has no url in payload');
 
   jobsRepo.setProgress(job.id, 0.2);
   emit(job.id);
@@ -160,6 +174,7 @@ async function runFetchThumbnail(job: Job): Promise<void> {
     duration: existing?.duration ?? info.duration,
     site: existing?.site ?? info.site,
   });
+  await unlink(path.join(config.thumbsDir, `${videoId}.jpg`)).catch(() => {});
   await writeSidecarForVideo(videoId);
 
   jobsRepo.setProgress(job.id, 1);
@@ -178,10 +193,31 @@ const HANDLERS: Record<JobKind, (job: Job) => Promise<void>> = {
 let running = false;
 let stopRequested = false;
 let stepPromise: Promise<void> | null = null;
+let wake: (() => void) | null = null;
 
-async function step(): Promise<void> {
+function wakeWorker(): void {
+  wake?.();
+}
+
+// Resolves when a new pending job is signalled or after timeoutMs, whichever
+// comes first.
+function waitForWork(timeoutMs: number): Promise<void> {
+  return new Promise(resolve => {
+    const timer = setTimeout(done, timeoutMs);
+    wake = done;
+    function done(): void {
+      clearTimeout(timer);
+      wake = null;
+      resolve();
+    }
+  });
+}
+
+// Returns true when a job was claimed (so the loop should immediately try the
+// next one), false when the queue was empty.
+async function step(): Promise<boolean> {
   const job = jobsRepo.claimNext();
-  if (!job) return;
+  if (!job) return false;
   emit(job.id);
 
   try {
@@ -204,12 +240,14 @@ async function step(): Promise<void> {
       videosRepo.update(job.video_id, { fetchStatus: 'error', fetchError: message });
     }
   }
+  return true;
 }
 
-async function loop(intervalMs: number): Promise<void> {
+async function loop(idleMs: number): Promise<void> {
   while (!stopRequested) {
+    let claimed = false;
     try {
-      await step();
+      claimed = await step();
     } catch (err) {
       console.error('[jobs] worker step crashed:', errorMessage(err));
       if (isRecoverableDbError(err)) {
@@ -220,22 +258,28 @@ async function loop(intervalMs: number): Promise<void> {
           console.error('[jobs] DB reload failed:', errorMessage(recoverErr));
         }
       }
+      await new Promise(resolve => setTimeout(resolve, ERROR_BACKOFF_MS));
+      continue;
     }
-    await new Promise(resolve => setTimeout(resolve, intervalMs));
+    // Drain the queue back-to-back; only sleep once it's empty.
+    if (!claimed && !stopRequested) await waitForWork(idleMs);
   }
   running = false;
 }
 
-export function startJobWorker(intervalMs = 300): void {
+export function startJobWorker(idleMs = IDLE_HEARTBEAT_MS): void {
   if (running) return;
   jobsRepo.resetRunningToPending();
   running = true;
   stopRequested = false;
-  stepPromise = loop(intervalMs);
+  setPendingJobListener(wakeWorker);
+  stepPromise = loop(idleMs);
 }
 
 export async function stopJobWorker(): Promise<void> {
   stopRequested = true;
+  setPendingJobListener(null);
+  wakeWorker();
   if (stepPromise) await stepPromise;
 }
 

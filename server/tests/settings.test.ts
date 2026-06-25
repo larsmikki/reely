@@ -26,20 +26,33 @@ describe('PATCH /api/settings', () => {
   it('sets and retrieves multiple settings', async () => {
     await supertest(app)
       .patch('/api/settings')
-      .send({ download_path: '/tmp/videos', theme: 'dark' })
+      .send({ download_path: '/tmp/videos', ffmpeg_path: '/usr/bin' })
 
     const res = await supertest(app).get('/api/settings')
     expect(res.status).toBe(200)
     expect(res.body.download_path).toBe('/tmp/videos')
-    expect(res.body.theme).toBe('dark')
+    expect(res.body.ffmpeg_path).toBe('/usr/bin')
   })
 
   it('updates an existing key', async () => {
-    await supertest(app).patch('/api/settings').send({ key1: 'old' })
-    await supertest(app).patch('/api/settings').send({ key1: 'new' })
+    await supertest(app).patch('/api/settings').send({ download_path: 'old' })
+    await supertest(app).patch('/api/settings').send({ download_path: 'new' })
 
     const res = await supertest(app).get('/api/settings')
-    expect(res.body.key1).toBe('new')
+    expect(res.body.download_path).toBe('new')
+  })
+
+  it('rejects unknown setting keys', async () => {
+    const res = await supertest(app).patch('/api/settings').send({ theme: 'dark' })
+    expect(res.status).toBe(400)
+
+    const settings = await supertest(app).get('/api/settings')
+    expect(settings.body.theme).toBeUndefined()
+  })
+
+  it('rejects non-string setting values', async () => {
+    const res = await supertest(app).patch('/api/settings').send({ download_path: 42 })
+    expect(res.status).toBe(400)
   })
 
   it('returns 400 for non-object body', async () => {

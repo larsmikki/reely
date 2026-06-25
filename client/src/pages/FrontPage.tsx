@@ -1,10 +1,13 @@
-import { useState, useCallback, useMemo } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState, useCallback, useMemo, useRef } from 'react'
+import { Link } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { useTheme } from '@/contexts/ThemeContext'
-import { getVideos, deleteVideo } from '@/api'
-import { queryKeys } from '@/queryKeys'
+import { deleteVideo, reorderCollections } from '@/api'
+import { useInfiniteVideos } from '@/hooks/useInfiniteVideos'
 import VideoCard from '@/components/VideoCard'
 import EditVideoModal from '@/components/EditVideoModal'
+import NewCollectionModal from '@/components/NewCollectionModal'
+import LoadMoreSentinel from '@/components/LoadMoreSentinel'
 import { usePlayer } from '@/contexts/PlayerContext'
 import { Button, Input, Select, Pill, Spinner } from '@/components/ui'
 import type { Video, Collection } from '@/types'
@@ -16,37 +19,28 @@ interface FrontPageProps {
   onCollectionsChange: () => void
 }
 
-const FETCH_LIMIT = 1000
 const PILL_COLLAPSE_THRESHOLD = 6
-const EMPTY_VIDEOS: Video[] = []
 
 export default function FrontPage({ collections, onAddVideo, refreshKey, onCollectionsChange }: FrontPageProps) {
   const { theme } = useTheme()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [filterCollection, setFilterCollection] = useState<number | 'uncategorized' | null>(null)
+  const [sort, setSort] = useState('newest')
   const { play } = usePlayer()
   const [editingVideo, setEditingVideo] = useState<Video | null>(null)
+  const [showNewCollection, setShowNewCollection] = useState(false)
+  const dragCollectionId = useRef<number | null>(null)
 
-  const videosParams = useMemo(() => ({
-    page: 1,
-    limit: FETCH_LIMIT,
+  const {
+    videos, total, isLoading: loading,
+    hasNextPage, isFetchingNextPage, fetchNextPage,
+  } = useInfiniteVideos({
     q: search || undefined,
     collection_id: filterCollection ?? undefined,
+    sort,
     refreshKey,
-  }), [filterCollection, refreshKey, search])
-  const { data, isLoading: loading } = useQuery({
-    queryKey: queryKeys.videos(videosParams),
-    queryFn: () => getVideos({
-        page: 1,
-        limit: FETCH_LIMIT,
-        q: search || undefined,
-        collection_id: filterCollection ?? undefined,
-    }),
-    refetchInterval: query => query.state.data?.items.some(v => v.fetch_status === 'pending') ? 4000 : false,
   })
-  const videos = data?.items ?? EMPTY_VIDEOS
-  const total = data?.total ?? 0
 
   const invalidateVideos = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['videos'] })
@@ -80,12 +74,38 @@ export default function FrontPage({ collections, onAddVideo, refreshKey, onColle
 
   const handleEditVideo = useCallback((video: Video) => setEditingVideo(video), [])
 
+  // Clicking a card queues the whole visible list for next/prev/auto-advance.
+  const handlePlay = useCallback((v: Video) => play(v, videos), [play, videos])
+
   const handleVideoMoved = useCallback(() => {
     invalidateVideos()
     onCollectionsChange()
   }, [invalidateVideos, onCollectionsChange])
 
   const showDropdown = collections.length > PILL_COLLAPSE_THRESHOLD
+
+  // Drag a collection pill onto another to reorder; the server persists
+  // sort_order, the refetch re-renders pills and groups in the new order.
+  const handlePillDrop = useCallback(async (targetId: number) => {
+    const sourceId = dragCollectionId.current
+    dragCollectionId.current = null
+    if (sourceId == null || sourceId === targetId) return
+    const ids = collections.map(c => c.id)
+    const from = ids.indexOf(sourceId)
+    const to = ids.indexOf(targetId)
+    if (from === -1 || to === -1) return
+    ids.splice(to, 0, ...ids.splice(from, 1))
+    try {
+      await reorderCollections(ids)
+      onCollectionsChange()
+    } catch { /* order falls back to the server's on next fetch */ }
+  }, [collections, onCollectionsChange])
+
+  const newCollectionPill = (
+    <Pill onClick={() => setShowNewCollection(true)} title="Create a new collection">
+      + New
+    </Pill>
+  )
 
   return (
     <div className="flex flex-col gap-6">
@@ -142,41 +162,54 @@ export default function FrontPage({ collections, onAddVideo, refreshKey, onColle
           )}
         </div>
 
-        {collections.length > 0 && (
-          showDropdown ? (
-            <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          {collections.length > 0 && (
+            <>
               <Pill active={filterCollection === null} onClick={() => setFilterCollection(null)}>All</Pill>
               <Pill active={filterCollection === 'uncategorized'} onClick={() => setFilterCollection(filterCollection === 'uncategorized' ? null : 'uncategorized')}>
                 Uncategorized
               </Pill>
-              <Select
-                value={filterCollection === null || filterCollection === 'uncategorized' ? '' : String(filterCollection)}
-                onChange={e => setFilterCollection(e.target.value === '' ? null : Number(e.target.value))}
-                className="!w-auto !py-1.5 !text-xs"
-              >
-                <option value="">Filter by collection…</option>
-                {collections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </Select>
-            </div>
+            </>
+          )}
+          {showDropdown ? (
+            <Select
+              value={filterCollection === null || filterCollection === 'uncategorized' ? '' : String(filterCollection)}
+              onChange={e => setFilterCollection(e.target.value === '' ? null : Number(e.target.value))}
+              className="!w-auto !py-1.5 !text-xs"
+            >
+              <option value="">Filter by collection…</option>
+              {collections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
           ) : (
-            <div className="flex items-center gap-2 flex-wrap">
-              <Pill active={filterCollection === null} onClick={() => setFilterCollection(null)}>All</Pill>
-              <Pill active={filterCollection === 'uncategorized'} onClick={() => setFilterCollection(filterCollection === 'uncategorized' ? null : 'uncategorized')}>
-                Uncategorized
+            collections.map(col => (
+              <Pill
+                key={col.id}
+                active={filterCollection === col.id}
+                dot={col.color}
+                onClick={() => setFilterCollection(filterCollection === col.id ? null : col.id)}
+                draggable
+                onDragStart={() => { dragCollectionId.current = col.id }}
+                onDragOver={e => e.preventDefault()}
+                onDrop={() => void handlePillDrop(col.id)}
+                title="Click to filter · drag to reorder"
+              >
+                {col.name}
               </Pill>
-              {collections.map(col => (
-                <Pill
-                  key={col.id}
-                  active={filterCollection === col.id}
-                  dot={col.color}
-                  onClick={() => setFilterCollection(filterCollection === col.id ? null : col.id)}
-                >
-                  {col.name}
-                </Pill>
-              ))}
-            </div>
-          )
-        )}
+            ))
+          )}
+          {newCollectionPill}
+          <Select
+            value={sort}
+            onChange={e => setSort(e.target.value)}
+            className="!w-auto !py-1.5 !text-xs ml-auto"
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="title">Title A→Z</option>
+            <option value="duration">Longest first</option>
+            <option value="site">By site</option>
+          </Select>
+        </div>
       </div>
 
       {loading ? (
@@ -206,7 +239,7 @@ export default function FrontPage({ collections, onAddVideo, refreshKey, onColle
               collection={collection}
               videos={groupVideos}
               collectionMap={collectionMap}
-              onClick={play}
+              onPlay={play}
               onDelete={handleDelete}
               onEdit={handleEditVideo}
               onMoved={handleVideoMoved}
@@ -220,7 +253,7 @@ export default function FrontPage({ collections, onAddVideo, refreshKey, onColle
               key={video.id}
               video={video}
               collectionMap={collectionMap}
-              onClick={play}
+              onClick={handlePlay}
               onDelete={handleDelete}
               onEdit={handleEditVideo}
               showCollection={true}
@@ -228,6 +261,13 @@ export default function FrontPage({ collections, onAddVideo, refreshKey, onColle
             />
           ))}
         </div>
+      )}
+
+      {hasNextPage && (
+        <>
+          <LoadMoreSentinel onVisible={() => { if (!isFetchingNextPage) void fetchNextPage() }} />
+          {isFetchingNextPage && <Spinner />}
+        </>
       )}
 
       {editingVideo && (
@@ -239,6 +279,13 @@ export default function FrontPage({ collections, onAddVideo, refreshKey, onColle
           onSaved={() => { setEditingVideo(null); invalidateVideos() }}
         />
       )}
+
+      {showNewCollection && (
+        <NewCollectionModal
+          onClose={() => setShowNewCollection(false)}
+          onCreated={() => onCollectionsChange()}
+        />
+      )}
     </div>
   )
 }
@@ -247,28 +294,58 @@ interface GroupProps {
   collection: Collection | null
   videos: Video[]
   collectionMap: Map<number, Collection>
-  onClick: (video: Video) => void
+  onPlay: (video: Video, queue: Video[]) => void
   onDelete: (video: Video) => void
   onEdit: (video: Video) => void
   onMoved?: () => void
 }
 
-function CollectionGroup({ collection, videos, collectionMap, onClick, onDelete, onEdit, onMoved }: GroupProps) {
+function CollectionGroup({ collection, videos, collectionMap, onPlay, onDelete, onEdit, onMoved }: GroupProps) {
   const { theme } = useTheme()
+  const handleClick = useCallback((v: Video) => onPlay(v, videos), [onPlay, videos])
+  const firstPlayable = videos.find(v => v.fetch_status === 'ok')
   return (
     <div>
       <div className="flex items-center gap-2.5 mb-4">
-        {collection ? (
-          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: collection.color }} />
-        ) : (
-          <span className="w-2.5 h-2.5 rounded-full shrink-0 border" style={{ borderColor: theme.text2 }} />
-        )}
-        <h2 className="text-sm font-bold" style={{ color: theme.text }}>
-          {collection ? collection.name : 'Uncategorized'}
-        </h2>
+        <Link
+          to={collection ? `/collections/${collection.id}` : '/collections/uncategorized'}
+          className="group flex items-center gap-2.5 min-w-0"
+          style={{ textDecoration: 'none' }}
+          title={`Open ${collection ? collection.name : 'Uncategorized'}`}
+        >
+          {collection ? (
+            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: collection.color }} />
+          ) : (
+            <span className="w-2.5 h-2.5 rounded-full shrink-0 border" style={{ borderColor: theme.text2 }} />
+          )}
+          <h2 className="text-sm font-bold truncate group-hover:underline" style={{ color: theme.text }}>
+            {collection ? collection.name : 'Uncategorized'}
+          </h2>
+          <svg
+            className="w-3.5 h-3.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+            style={{ color: theme.text2 }}
+            aria-hidden
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </Link>
         <span className="text-xs font-medium" style={{ color: theme.text2 }}>
           {videos.length}
         </span>
+        {firstPlayable && (
+          <button
+            onClick={() => onPlay(firstPlayable, videos)}
+            className="flex items-center gap-1 text-xs font-medium transition-opacity opacity-70 hover:opacity-100"
+            style={{ color: theme.accent }}
+            title="Play this group from the top"
+          >
+            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+            </svg>
+            Play all
+          </button>
+        )}
         <div className="flex-1 h-px" style={{ background: theme.border }} />
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
@@ -277,7 +354,7 @@ function CollectionGroup({ collection, videos, collectionMap, onClick, onDelete,
             key={video.id}
             video={video}
             collectionMap={collectionMap}
-            onClick={onClick}
+            onClick={handleClick}
             onDelete={onDelete}
             onEdit={onEdit}
             showCollection={false}

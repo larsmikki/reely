@@ -13,12 +13,12 @@ export function OutputOptions({ outputDir, outputMp3, outputMp4, onMp3Change, on
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-semibold tracking-wide" style={{ color: theme.text2 }}>Output folder</span>
+        <span className="text-xs font-semibold tracking-wide" style={{ color: theme.text2 }}>One-time export on save</span>
         <span className="text-xs font-mono truncate max-w-48" style={{ color: theme.text2 }} title={outputDir}>{outputDir}</span>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <Toggle label="Output Audio" active={outputMp3} onChange={onMp3Change} icon={<AudioIcon />} />
-        <Toggle label="Output Video" active={outputMp4} onChange={onMp4Change} icon={<VideoIcon />} />
+        <Toggle label="Export MP3 now" active={outputMp3} onChange={onMp3Change} icon={<AudioIcon />} />
+        <Toggle label="Copy MP4 to output" active={outputMp4} onChange={onMp4Change} icon={<VideoIcon />} />
       </div>
     </div>
   )

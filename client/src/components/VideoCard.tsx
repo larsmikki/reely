@@ -1,24 +1,18 @@
-import { memo, useEffect, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useTheme } from '@/contexts/ThemeContext'
 import { thumbnailUrl, cleanupAndRetryVideo, refreshVideoThumbnail, bulkMoveVideos } from '@/api'
-import { useActiveVideoJob, JOB_KIND_LABEL } from '@/contexts/JobsContext'
+import { useActiveVideoJob, useJobs, JOB_KIND_LABEL } from '@/contexts/JobsContext'
 import { usePlayer } from '@/contexts/PlayerContext'
 import { useDesktop } from '@/contexts/DesktopContext'
+import { ConfirmDialog, useToast } from '@/components/ui'
 import {
   downloadVideo,
   removeOfflineVideo,
   useOfflineState,
 } from '@/offline/videoDownloads'
 import type { Video, Collection } from '@/types'
-
-function formatDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  const s = seconds % 60
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-  return `${m}:${String(s).padStart(2, '0')}`
-}
+import { formatDuration } from '@/utils/format'
 
 interface VideoCardProps {
   video: Video
@@ -40,8 +34,9 @@ const VideoCard = memo(function VideoCard({
   onMoved,
 }: VideoCardProps) {
   const { theme } = useTheme()
+  const { addToast } = useToast()
   const queryClient = useQueryClient()
-  const { desktop } = useDesktop()
+  const { desktop, deskNames } = useDesktop()
   const targetDesktop: 1 | 2 = desktop === 1 ? 2 : 1
   const [moving, setMoving] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -72,10 +67,22 @@ const VideoCard = memo(function VideoCard({
   const collection = video.collection_id != null ? collectionMap.get(video.collection_id) : undefined
   const isPending = video.fetch_status === 'pending' || !!activeJob
 
+  // The worker runs one job at a time, FIFO by id — count what's ahead of us.
+  const { jobs: allJobs } = useJobs()
+  const queuedAhead = useMemo(() => {
+    if (!activeJob || activeJob.status !== 'pending') return null
+    return allJobs.filter(
+      j => j.status === 'running' || (j.status === 'pending' && j.id < activeJob.id),
+    ).length
+  }, [allJobs, activeJob])
+
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [offlineRemoveConfirmOpen, setOfflineRemoveConfirmOpen] = useState(false)
+
   const handleMenuClick = (e: React.MouseEvent) => { e.stopPropagation(); setMenuOpen(p => !p) }
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation(); setMenuOpen(false)
-    if (window.confirm('Delete this video?')) onDelete(video)
+    setDeleteConfirmOpen(true)
   }
   const handleEdit = (e: React.MouseEvent) => { e.stopPropagation(); setMenuOpen(false); onEdit(video) }
   const [refreshThumbStatus, setRefreshThumbStatus] = useState<'idle' | 'queued' | 'error'>('idle')
@@ -97,7 +104,9 @@ const VideoCard = memo(function VideoCard({
     try {
       await bulkMoveVideos([video.id], targetDesktop)
       onMoved?.()
-    } catch { /* ignore */ }
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Failed to move video', 'error')
+    }
     finally { setMoving(false) }
   }
   const handleRetry = async (e: React.MouseEvent) => {
@@ -108,6 +117,19 @@ const VideoCard = memo(function VideoCard({
       await queryClient.invalidateQueries({ queryKey: ['videos'] })
     } catch { /* surfaced again as fetch_error on the next refetch */ }
     finally { setRetrying(false) }
+  }
+  const handleOpenOriginal = (e: React.MouseEvent) => {
+    e.stopPropagation(); setMenuOpen(false)
+    window.open(video.page_url, '_blank', 'noopener,noreferrer')
+  }
+  const handleCopyLink = async (e: React.MouseEvent) => {
+    e.stopPropagation(); setMenuOpen(false)
+    try {
+      await navigator.clipboard.writeText(video.page_url)
+      addToast('Link copied', 'success')
+    } catch {
+      addToast('Could not copy the link', 'error')
+    }
   }
   const handleCopyError = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -123,9 +145,7 @@ const VideoCard = memo(function VideoCard({
   const handleOfflineToggle = (e: React.MouseEvent) => {
     e.stopPropagation(); setMenuOpen(false)
     if (offline.status === 'available') {
-      if (window.confirm('Remove this video from offline storage?')) {
-        void removeOfflineVideo(video.id)
-      }
+      setOfflineRemoveConfirmOpen(true)
     } else if (offline.status === 'absent' || offline.status === 'error') {
       void downloadVideo(video.id)
     }
@@ -181,7 +201,9 @@ const VideoCard = memo(function VideoCard({
             />
             {activeJob && (
               <span className="text-xs text-center" style={{ color: theme.text2 }}>
-                {JOB_KIND_LABEL[activeJob.kind]}
+                {activeJob.status === 'pending'
+                  ? queuedAhead ? `Queued · ${queuedAhead} ahead` : 'Queued'
+                  : JOB_KIND_LABEL[activeJob.kind]}
               </span>
             )}
           </div>
@@ -357,20 +379,12 @@ const VideoCard = memo(function VideoCard({
               <>
                 <div className="fixed inset-0 z-10" onClick={e => { e.stopPropagation(); setMenuOpen(false) }} />
                 <div className="absolute right-0 top-7 z-20 py-1 rounded-lg shadow-lg min-w-32" style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-                  {video.fetch_status === 'error' && (
-                    <button
-                      onClick={handleRetry}
-                      disabled={retrying}
-                      className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:opacity-80 disabled:opacity-60"
-                      style={{ color: theme.text }}
-                    >
-                      {retrying ? 'Retrying…' : 'Retry download'}
-                    </button>
-                  )}
                   <button onClick={handleEdit} className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:opacity-80" style={{ color: theme.text }}>Edit</button>
+                  <button onClick={handleOpenOriginal} className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:opacity-80" style={{ color: theme.text }}>Open original page</button>
+                  <button onClick={handleCopyLink} className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:opacity-80" style={{ color: theme.text }}>Copy link</button>
                   <button onClick={handleRefreshThumb} className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:opacity-80" style={{ color: theme.text }}>Refresh thumbnail</button>
                   <button onClick={handleMove} disabled={moving} className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:opacity-80 disabled:opacity-60" style={{ color: theme.text }}>
-                    {moving ? 'Moving…' : `Move to Desk ${targetDesktop}`}
+                    {moving ? 'Moving…' : `Move to ${deskNames[targetDesktop]}`}
                   </button>
                   <button
                     onClick={handleOfflineToggle}
@@ -387,6 +401,31 @@ const VideoCard = memo(function VideoCard({
           </div>
         </div>
       </div>
+
+      {/* Dialogs live inside the clickable card, so stop propagation to keep
+          backdrop/button clicks from also opening the video. */}
+      {(deleteConfirmOpen || offlineRemoveConfirmOpen) && (
+        <div onClick={e => e.stopPropagation()}>
+          <ConfirmDialog
+            open={deleteConfirmOpen}
+            title="Delete video"
+            message="Delete this video? The downloaded file is removed along with it."
+            confirmLabel="Delete"
+            destructive
+            onConfirm={() => onDelete(video)}
+            onClose={() => setDeleteConfirmOpen(false)}
+          />
+          <ConfirmDialog
+            open={offlineRemoveConfirmOpen}
+            title="Remove offline copy"
+            message="Remove this video from offline storage?"
+            confirmLabel="Remove"
+            destructive
+            onConfirm={() => void removeOfflineVideo(video.id)}
+            onClose={() => setOfflineRemoveConfirmOpen(false)}
+          />
+        </div>
+      )}
     </div>
   )
 })

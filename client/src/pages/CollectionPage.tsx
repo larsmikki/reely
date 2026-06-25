@@ -1,13 +1,14 @@
 import { useState, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { useTheme } from '@/contexts/ThemeContext'
-import { getVideos, deleteVideo, deleteCollection, updateCollection, createCollection } from '@/api'
-import { queryKeys } from '@/queryKeys'
+import { deleteVideo, deleteCollection, updateCollection } from '@/api'
+import { useInfiniteVideos } from '@/hooks/useInfiniteVideos'
 import VideoCard from '@/components/VideoCard'
 import EditVideoModal from '@/components/EditVideoModal'
+import LoadMoreSentinel from '@/components/LoadMoreSentinel'
 import { usePlayer } from '@/contexts/PlayerContext'
-import { Button, Input, Modal, Spinner, ColorSwatches, PRESET_COLORS } from '@/components/ui'
+import { Button, Input, Select, Spinner, ColorSwatches, ConfirmDialog } from '@/components/ui'
 import type { Video, Collection } from '@/types'
 
 interface CollectionPageProps {
@@ -16,8 +17,6 @@ interface CollectionPageProps {
   onCollectionsChange: () => void
   refreshKey: number
 }
-
-const PAGE_SIZE = 24
 
 export default function CollectionPage({
   collections,
@@ -34,31 +33,21 @@ export default function CollectionPage({
   const collectionId = isUncategorized ? 'uncategorized' : Number(id)
   const collection = isUncategorized ? null : collections.find(c => c.id === Number(id))
 
-  const [page, setPage] = useState(1)
   const { play } = usePlayer()
   const [editingVideo, setEditingVideo] = useState<Video | null>(null)
 
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState('')
   const [editDesc, setEditDesc] = useState('')
   const [editColor, setEditColor] = useState('')
   const [saving, setSaving] = useState(false)
+  const [sort, setSort] = useState('newest')
 
-  const [showNewCollection, setShowNewCollection] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [newDesc, setNewDesc] = useState('')
-  const [newColor, setNewColor] = useState(PRESET_COLORS[0])
-  const [creating, setCreating] = useState(false)
-
-  const videosParams = useMemo(() => ({ collectionId, page, refreshKey }), [collectionId, page, refreshKey])
-  const { data, isLoading: loading } = useQuery({
-    queryKey: queryKeys.videos(videosParams),
-    queryFn: () => getVideos({ collection_id: collectionId, page, limit: PAGE_SIZE }),
-    refetchInterval: query => query.state.data?.items.some(v => v.fetch_status === 'pending') ? 4000 : false,
-  })
-  const videos = data?.items ?? []
-  const total = data?.total ?? 0
-  const totalPages = data?.totalPages ?? 1
+  const {
+    videos, total, isLoading: loading,
+    hasNextPage, isFetchingNextPage, fetchNextPage,
+  } = useInfiniteVideos({ collection_id: collectionId, sort, refreshKey })
 
   const invalidateVideos = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['videos'] })
@@ -74,9 +63,12 @@ export default function CollectionPage({
 
   const handleEditVideo = useCallback((video: Video) => setEditingVideo(video), [])
 
+  // Clicking a card queues the whole loaded list for next/prev/auto-advance.
+  const handlePlay = useCallback((v: Video) => play(v, videos), [play, videos])
+  const firstPlayable = videos.find(v => v.fetch_status === 'ok')
+
   const handleDeleteCollection = async () => {
     if (!collection) return
-    if (!window.confirm(`Delete collection "${collection.name}"? Videos will become uncategorized.`)) return
     await deleteCollection(collection.id)
     onCollectionsChange()
     navigate('/')
@@ -106,21 +98,6 @@ export default function CollectionPage({
     finally { setSaving(false) }
   }
 
-  const handleCreateCollection = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newName.trim()) return
-    setCreating(true)
-    try {
-      await createCollection({ name: newName.trim(), description: newDesc || undefined, color: newColor })
-      onCollectionsChange()
-      setShowNewCollection(false)
-      setNewName('')
-      setNewDesc('')
-      setNewColor(PRESET_COLORS[0])
-    } catch { /* ignore */ }
-    finally { setCreating(false) }
-  }
-
   const header = isUncategorized ? (
     <div>
       <h1 className="text-2xl font-extrabold tracking-tight" style={{ color: theme.text }}>Uncategorized</h1>
@@ -143,7 +120,7 @@ export default function CollectionPage({
           <span className="w-4 h-4 rounded-full" style={{ background: collection.color }} />
           <h1 className="text-2xl font-extrabold tracking-tight" style={{ color: theme.text }}>{collection.name}</h1>
           <Button variant="secondary" size="sm" onClick={startEdit}>Edit</Button>
-          <Button variant="danger" size="sm" onClick={handleDeleteCollection}>Delete</Button>
+          <Button variant="danger" size="sm" onClick={() => setConfirmDeleteOpen(true)}>Delete</Button>
         </div>
         {collection.description && (
           <p className="text-sm mt-1" style={{ color: theme.text2 }}>{collection.description}</p>
@@ -161,18 +138,44 @@ export default function CollectionPage({
     <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         {header}
-        <Button
-          variant="primary"
-          size="lg"
-          onClick={() => onAddVideo(collection?.id)}
-          leadingIcon={
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-          }
-        >
-          Add Video
-        </Button>
+        <div className="flex items-center gap-2">
+          {firstPlayable && (
+            <Button
+              variant="secondary"
+              size="lg"
+              onClick={() => play(firstPlayable, videos)}
+              leadingIcon={
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                </svg>
+              }
+            >
+              Play all
+            </Button>
+          )}
+          <Button
+            variant="primary"
+            size="lg"
+            onClick={() => onAddVideo(collection?.id)}
+            leadingIcon={
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+            }
+          >
+            Add Video
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex justify-end">
+        <Select value={sort} onChange={e => setSort(e.target.value)} className="!w-auto !py-1.5 !text-xs">
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="title">Title A→Z</option>
+          <option value="duration">Longest first</option>
+          <option value="site">By site</option>
+        </Select>
       </div>
 
       {loading ? (
@@ -196,7 +199,7 @@ export default function CollectionPage({
               key={video.id}
               video={video}
               collectionMap={collectionMap}
-              onClick={play}
+              onClick={handlePlay}
               onDelete={handleDelete}
               onEdit={handleEditVideo}
               showCollection={isUncategorized}
@@ -205,26 +208,23 @@ export default function CollectionPage({
         </div>
       )}
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 mt-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setPage(p => Math.max(1, p - 1))}
-            disabled={page === 1}
-          >
-            Previous
-          </Button>
-          <span className="text-sm" style={{ color: theme.text2 }}>Page {page} of {totalPages}</span>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-          >
-            Next
-          </Button>
-        </div>
+      {hasNextPage && (
+        <>
+          <LoadMoreSentinel onVisible={() => { if (!isFetchingNextPage) void fetchNextPage() }} />
+          {isFetchingNextPage && <Spinner />}
+        </>
+      )}
+
+      {collection && (
+        <ConfirmDialog
+          open={confirmDeleteOpen}
+          title="Delete collection"
+          message={`Delete collection "${collection.name}"? Videos will become uncategorized.`}
+          confirmLabel="Delete"
+          destructive
+          onConfirm={() => void handleDeleteCollection()}
+          onClose={() => setConfirmDeleteOpen(false)}
+        />
       )}
 
       {editingVideo && (
@@ -237,27 +237,6 @@ export default function CollectionPage({
         />
       )}
 
-      {showNewCollection && (
-        <Modal title="New collection" onClose={() => setShowNewCollection(false)}>
-          <form onSubmit={handleCreateCollection} className="px-6 py-5 flex flex-col gap-4">
-            <div>
-              <label className="block text-xs font-semibold mb-1.5 tracking-wide" style={{ color: theme.text2 }}>Color</label>
-              <ColorSwatches value={newColor} onChange={setNewColor} size={24} />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-1.5 tracking-wide" style={{ color: theme.text2 }}>Name</label>
-              <Input type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Collection name" required />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-1.5 tracking-wide" style={{ color: theme.text2 }}>Description (optional)</label>
-              <Input type="text" value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Short description..." />
-            </div>
-            <Button type="submit" variant="primary" fullWidth disabled={creating || !newName.trim()}>
-              {creating ? 'Creating...' : 'Create Collection'}
-            </Button>
-          </form>
-        </Modal>
-      )}
     </div>
   )
 }

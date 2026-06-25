@@ -1,25 +1,50 @@
 import { Router, Request, Response } from 'express';
 import { writeFile, stat, unlink } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { settingsRepo } from '../db/repositories/settings.js';
-import { getDb } from '../db/connection.js';
-import { allRows } from '../db/repositories/rows.js';
-import { writeSidecarForVideo, importSidecars } from '../utils/sidecar.js';
-import { jobsRepo } from '../db/repositories/jobs.js';
+import { importSidecars } from '../utils/sidecar.js';
+import {
+  regenerateAllSidecars,
+  renameFilesToTitles,
+  enqueueThumbnailRefresh,
+} from '../services/maintenance.service.js';
 import { config } from '../config.js';
 
 const router = Router();
 
+// Settings that may be written via the API. Anything else is rejected so a
+// typo'd or stale client can't litter the settings table.
+const ALLOWED_SETTINGS = new Set([
+  'download_path',
+  'ffmpeg_path',
+  'youtube_cookies_mode',
+  'youtube_cookies_browser',
+  'desk_1_name',
+  'desk_2_name',
+]);
+
 router.get('/', (_req: Request, res: Response) => {
-  res.json(settingsRepo.getAll());
+  const all = settingsRepo.getAll();
+  // Expose whether a PIN is set (boolean flag) but never the hash itself
+  all['desk2_pin_set'] = all['desk2_pin_hash'] ? '1' : '';
+  delete all['desk2_pin_hash'];
+  res.json(all);
 });
 
 router.patch('/', (req: Request, res: Response) => {
-  const body = req.body as Record<string, string>;
+  const body = req.body as Record<string, unknown>;
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     res.status(400).json({ error: 'Body must be a key-value object' });
     return;
   }
-  settingsRepo.setMany(body);
+  const invalid = Object.entries(body)
+    .filter(([k, v]) => !ALLOWED_SETTINGS.has(k) || typeof v !== 'string')
+    .map(([k]) => k);
+  if (invalid.length > 0) {
+    res.status(400).json({ error: `Unknown or non-string setting(s): ${invalid.join(', ')}` });
+    return;
+  }
+  settingsRepo.setMany(body as Record<string, string>);
   res.json({ status: 'ok' });
 });
 
@@ -57,20 +82,7 @@ router.delete('/cookies', async (_req: Request, res: Response) => {
 });
 
 router.post('/regenerate-sidecars', async (_req: Request, res: Response) => {
-  const rows = allRows<{ id: number }>(
-    getDb().exec('SELECT id FROM videos WHERE local_path IS NOT NULL'),
-  );
-  let written = 0;
-  let failed = 0;
-  for (const row of rows) {
-    try {
-      await writeSidecarForVideo(row.id);
-      written++;
-    } catch {
-      failed++;
-    }
-  }
-  res.json({ written, failed, total: rows.length });
+  res.json(await regenerateAllSidecars());
 });
 
 router.post('/import-sidecars', async (_req: Request, res: Response) => {
@@ -82,22 +94,48 @@ router.post('/import-sidecars', async (_req: Request, res: Response) => {
   }
 });
 
+router.post('/rename-to-titles', async (_req: Request, res: Response) => {
+  res.json(await renameFilesToTitles());
+});
+
+// POST /api/settings/desk2-pin — set PIN (hash stored, raw value never persisted)
+router.post('/desk2-pin', (req: Request, res: Response) => {
+  const { pin } = req.body as { pin?: string };
+  if (typeof pin !== 'string' || !pin.trim()) {
+    res.status(400).json({ error: 'pin is required' });
+    return;
+  }
+  const existing = settingsRepo.getMany(['desk2_pin_hash'])['desk2_pin_hash'] ?? '';
+  if (existing) {
+    res.status(409).json({ error: 'A PIN is already set; remove it first' });
+    return;
+  }
+  settingsRepo.set('desk2_pin_hash', createHash('sha256').update(pin).digest('hex'));
+  res.json({ ok: true });
+});
+
+// DELETE /api/settings/desk2-pin — remove PIN (requires current PIN)
+router.delete('/desk2-pin', (req: Request, res: Response) => {
+  const { currentPin } = req.body as { currentPin?: string };
+  if (typeof currentPin !== 'string' || !currentPin.trim()) {
+    res.status(400).json({ error: 'currentPin is required' });
+    return;
+  }
+  const pinHash = settingsRepo.getMany(['desk2_pin_hash'])['desk2_pin_hash'] ?? '';
+  if (!pinHash) { res.json({ ok: true }); return; }
+  if (createHash('sha256').update(currentPin).digest('hex') !== pinHash) {
+    res.status(401).json({ error: 'Wrong PIN' });
+    return;
+  }
+  settingsRepo.set('desk2_pin_hash', '');
+  res.json({ ok: true });
+});
+
 // Enqueue a fetch_thumbnail job for every video that has a page URL but no
 // thumbnail. Pass ?all=1 to re-fetch for every video regardless.
-router.post('/refresh-thumbnails', async (req: Request, res: Response) => {
+router.post('/refresh-thumbnails', (req: Request, res: Response) => {
   const all = req.query.all === '1' || req.query.all === 'true';
-  const sql = all
-    ? 'SELECT id, page_url FROM videos WHERE page_url IS NOT NULL AND page_url != ""'
-    : 'SELECT id, page_url FROM videos WHERE page_url IS NOT NULL AND page_url != "" AND (thumbnail_url IS NULL OR thumbnail_url = "")';
-  const rows = allRows<{ id: number; page_url: string }>(getDb().exec(sql));
-  for (const row of rows) {
-    jobsRepo.enqueue({
-      videoId: row.id,
-      kind: 'fetch_thumbnail',
-      payload: { url: row.page_url },
-    });
-  }
-  res.json({ enqueued: rows.length });
+  res.json(enqueueThumbnailRefresh(all));
 });
 
 export default router;

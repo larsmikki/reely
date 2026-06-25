@@ -1,32 +1,42 @@
 import { getDb, markDirty } from '../connection.js';
 import { firstRow, allRows, scalar } from './rows.js';
+import type { Job, JobKind } from '../../types/index.js';
 
-export type JobKind = 'extract_metadata' | 'download_video' | 'download_mp3' | 'copy_to_output' | 'fetch_thumbnail';
-export type JobStatus = 'pending' | 'running' | 'ok' | 'error' | 'cancelled' | 'ignored';
+export type { Job, JobKind, JobStatus } from '../../types/index.js';
 
-export interface Job {
-  id: number;
-  video_id: number | null;
-  kind: JobKind;
-  payload: string | null;
-  status: JobStatus;
-  progress: number;
-  error: string | null;
-  attempts: number;
-  max_attempts: number;
-  created_at: string;
-  updated_at: string;
+// Payload shape per job kind. enqueue() and parseJobPayload() are typed
+// against this map so a handler can't read fields its producer never wrote.
+export interface JobPayloadMap {
+  extract_metadata: { url: string; outputMp4?: boolean; downloadMp3?: boolean };
+  download_video: { url: string; outputMp4?: boolean; downloadMp3?: boolean; title?: string | null };
+  download_mp3: { url: string };
+  // outputDir is optional: jobs enqueued outside the download chain resolve it
+  // from the download_path setting at run time.
+  copy_to_output: { localPath: string; title: string | null; outputDir?: string };
+  fetch_thumbnail: { url: string };
 }
 
-export interface JobEnqueue {
+export interface JobEnqueue<K extends JobKind = JobKind> {
   videoId: number | null;
-  kind: JobKind;
-  payload?: Record<string, unknown>;
+  kind: K;
+  payload?: JobPayloadMap[K];
   maxAttempts?: number;
 }
 
+export function parseJobPayload<K extends JobKind>(job: Job, kind: K): Partial<JobPayloadMap[K]> {
+  if (job.kind !== kind) throw new Error(`expected ${kind} job, got ${job.kind}`);
+  return JSON.parse(job.payload ?? '{}') as Partial<JobPayloadMap[K]>;
+}
+
+// The worker subscribes here so a new pending job wakes it immediately
+// instead of waiting for the next poll tick.
+let pendingJobListener: (() => void) | null = null;
+export function setPendingJobListener(listener: (() => void) | null): void {
+  pendingJobListener = listener;
+}
+
 export const jobsRepo = {
-  enqueue(input: JobEnqueue): Job {
+  enqueue<K extends JobKind>(input: JobEnqueue<K>): Job {
     const db = getDb();
     db.run(
       `INSERT INTO jobs (video_id, kind, payload, status, max_attempts)
@@ -40,6 +50,7 @@ export const jobsRepo = {
     );
     const id = scalar<number>(db.exec('SELECT last_insert_rowid()'))!;
     markDirty();
+    pendingJobListener?.();
     return this.findById(id)!;
   },
 
@@ -91,6 +102,7 @@ export const jobsRepo = {
       );
     }
     markDirty();
+    if (retry) pendingJobListener?.();
   },
 
   cancel(id: number): boolean {
@@ -123,6 +135,7 @@ export const jobsRepo = {
       `UPDATE jobs SET status = 'pending', updated_at = datetime('now') WHERE status = 'running'`,
     );
     markDirty();
+    pendingJobListener?.();
   },
 
   listActive(): Job[] {

@@ -1,8 +1,9 @@
-import initSqlJs, { Database } from 'sql.js';
+import initSqlJs, { type SqlJsStatic, Database } from 'sql.js';
 import fs from 'fs';
 import path from 'path';
 import { config } from '../config.js';
 
+let sql: SqlJsStatic | null = null;
 let db: Database;
 let dirty = false;
 let saveTimer: NodeJS.Timeout | null = null;
@@ -15,13 +16,13 @@ const FLUSH_INTERVAL_MS = 5000;
 export async function initDb(): Promise<Database> {
   if (db) return db;
 
-  const SQL = await initSqlJs();
+  sql = await initSqlJs();
 
   if (fs.existsSync(dbPath)) {
     const buffer = fs.readFileSync(dbPath);
-    db = new SQL.Database(buffer);
+    db = new sql.Database(buffer);
   } else {
-    db = new SQL.Database();
+    db = new sql.Database();
   }
 
   db.run('PRAGMA foreign_keys = ON');
@@ -35,8 +36,8 @@ export function getDb(): Database {
 }
 
 export async function resetDb(): Promise<void> {
-  const SQL = await initSqlJs();
-  db = new SQL.Database();
+  if (!sql) sql = await initSqlJs();
+  db = new sql.Database();
   db.run('PRAGMA foreign_keys = ON');
   dirty = false;
 }
@@ -105,20 +106,22 @@ export function stopDbFlusher(): void {
 // after a wasm "memory access out of bounds" error — once that happens the
 // existing handle is poisoned and every subsequent exec() throws the same
 // error, so we must rebuild it.
+//
+// IMPORTANT: reuse the existing SqlJs module rather than calling initSqlJs()
+// again. Each initSqlJs() call allocates a new WASM memory arena; calling it
+// repeatedly while the old one hasn't been GC'd compounds memory pressure and
+// can cause initSqlJs() itself to OOM, leaving db in a permanently closed state.
+// Closing the old handle first frees its SQLite pages back to the same WASM
+// heap, so the new Database() succeeds within the already-allocated arena.
 export async function reloadDb(): Promise<void> {
-  const SQL = await initSqlJs();
+  if (!sql) sql = await initSqlJs();
   const buffer = fs.existsSync(dbPath) ? fs.readFileSync(dbPath) : null;
   try {
     db.close();
   } catch {
     // handle already corrupted — ignore
   }
-  // Build into a local first and only swap on success. Closing above frees the
-  // old handle's wasm memory, so a re-create that previously OOM'd should now
-  // succeed; if it still throws, `db` keeps pointing at the closed handle and
-  // queries throw "Database closed", which the worker treats as recoverable and
-  // retries on its next tick.
-  const fresh = buffer ? new SQL.Database(buffer) : new SQL.Database();
+  const fresh = buffer ? new sql.Database(buffer) : new sql.Database();
   fresh.run('PRAGMA foreign_keys = ON');
   db = fresh;
   dirty = false;

@@ -1,15 +1,34 @@
-import type { Collection, Video, PaginatedResponse, CollectionsResponse } from '@/types'
-import type { Job } from '@/contexts/JobsContext'
+import type { Collection, Video, Job, PaginatedResponse, CollectionsResponse } from '@/types'
+
+function getDesk2Token(): string | null {
+  try { return sessionStorage.getItem('desk2_token') } catch { return null }
+}
+export function setDesk2Token(token: string) {
+  try { sessionStorage.setItem('desk2_token', token) } catch {}
+}
+export function clearDesk2Token() {
+  try { sessionStorage.removeItem('desk2_token') } catch {}
+}
+export function isDesk2Unlocked(): boolean {
+  return !!getDesk2Token()
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = getDesk2Token()
+  const extraHeaders: Record<string, string> = {}
+  if (token) extraHeaders['X-Desk2-Token'] = token
   const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...extraHeaders, ...options?.headers },
     ...options,
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
     let message = `API error ${res.status}`
-    try { const j = JSON.parse(text); if (j?.error) message = j.error } catch {}
+    let desk2Locked = false
+    try { const j = JSON.parse(text); if (j?.error) message = j.error; if (j?.code === 'DESK2_LOCKED') desk2Locked = true } catch {}
+    if (res.status === 403 && desk2Locked) {
+      window.dispatchEvent(new CustomEvent('desk2-locked'))
+    }
     throw new Error(message)
   }
   if (res.status === 204) return undefined as T
@@ -58,12 +77,20 @@ export function deleteCollection(id: number): Promise<void> {
   return request(`/api/collections/${id}`, { method: 'DELETE' })
 }
 
+export function reorderCollections(ids: number[]): Promise<{ status: string }> {
+  return request('/api/collections/reorder', {
+    method: 'PUT',
+    body: JSON.stringify({ ids }),
+  })
+}
+
 // Videos
 export function getVideos(params: {
   collection_id?: number | 'uncategorized'
   page?: number
   limit?: number
   q?: string
+  sort?: string
 }): Promise<PaginatedResponse<Video>> {
   const searchParams = new URLSearchParams()
   searchParams.set('desktop', String(_desktop))
@@ -72,6 +99,7 @@ export function getVideos(params: {
   if (params.page !== undefined) searchParams.set('page', String(params.page))
   if (params.limit !== undefined) searchParams.set('limit', String(params.limit))
   if (params.q) searchParams.set('q', params.q)
+  if (params.sort) searchParams.set('sort', params.sort)
   return request(`/api/videos?${searchParams.toString()}`)
 }
 
@@ -190,8 +218,23 @@ export function importSidecars(): Promise<{ imported: number; replaced: number; 
   return request('/api/settings/import-sidecars', { method: 'POST' })
 }
 
+export function renameToTitles(): Promise<{ renamed: number; skipped: number; failed: number; total: number }> {
+  return request('/api/settings/rename-to-titles', { method: 'POST' })
+}
+
 export function refreshThumbnails(all = false): Promise<{ enqueued: number }> {
   return request(`/api/settings/refresh-thumbnails${all ? '?all=1' : ''}`, { method: 'POST' })
+}
+
+// Desk 2 PIN auth
+export function verifyDesk2Pin(pin: string): Promise<{ token: string }> {
+  return request('/api/auth/desk2', { method: 'POST', body: JSON.stringify({ pin }) })
+}
+export function setDesk2Pin(pin: string): Promise<{ ok: boolean }> {
+  return request('/api/settings/desk2-pin', { method: 'POST', body: JSON.stringify({ pin }) })
+}
+export function clearDesk2Pin(currentPin: string): Promise<{ ok: boolean }> {
+  return request('/api/settings/desk2-pin', { method: 'DELETE', body: JSON.stringify({ currentPin }) })
 }
 
 export function getCookieStatus(): Promise<{ present: boolean; size: number; updatedAt: string | null }> {

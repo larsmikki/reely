@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
 import compression from 'compression';
 import morgan from 'morgan';
@@ -10,6 +10,18 @@ import settingsRouter from './routes/settings.js';
 import dataRouter from './routes/data.js';
 import browseRouter from './routes/browse.js';
 import jobsRouter from './routes/jobs.js';
+import authRouter, { makeDesk2Token } from './routes/auth.js';
+import { settingsRepo } from './db/repositories/settings.js';
+
+// Gate GET requests for desktop=2 behind the PIN token when one is configured.
+function desk2Guard(req: Request, res: Response, next: NextFunction): void {
+  if (req.method !== 'GET' || String(req.query.desktop) !== '2') { next(); return; }
+  const pinHash = settingsRepo.getMany(['desk2_pin_hash'])['desk2_pin_hash'] ?? '';
+  if (!pinHash) { next(); return; }
+  const token = req.headers['x-desk2-token'] as string | undefined;
+  if (token === makeDesk2Token(pinHash)) { next(); return; }
+  res.status(403).json({ error: 'Desk 2 is locked', code: 'DESK2_LOCKED' });
+}
 
 export function createApp() {
   const app = express();
@@ -31,8 +43,9 @@ export function createApp() {
   });
 
   // API routes
-  app.use('/api/collections', collectionsRouter);
-  app.use('/api/videos', videosRouter);
+  app.use('/api/auth', authRouter);
+  app.use('/api/collections', desk2Guard, collectionsRouter);
+  app.use('/api/videos', desk2Guard, videosRouter);
   app.use('/api/settings', settingsRouter);
   app.use('/api/data', dataRouter);
   app.use('/api/browse', browseRouter);

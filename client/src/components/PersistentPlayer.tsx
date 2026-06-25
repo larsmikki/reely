@@ -2,48 +2,35 @@ import { useEffect, useState } from 'react'
 import { usePlayer } from '@/contexts/PlayerContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { redownloadVideo } from '@/api'
+import { ConfirmDialog } from '@/components/ui'
 import {
   downloadVideo,
   removeOfflineVideo,
   useOfflineState,
 } from '@/offline/videoDownloads'
 import type { Collection } from '@/types'
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  const units = ['KB', 'MB', 'GB']
-  let n = bytes / 1024
-  let i = 0
-  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++ }
-  return `${n.toFixed(n < 10 ? 1 : 0)} ${units[i]}`
-}
-
-function formatDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  const s = seconds % 60
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-  return `${m}:${String(s).padStart(2, '0')}`
-}
+import { formatDuration, formatBytes } from '@/utils/format'
 
 export default function PersistentPlayer({ collections }: { collections: Collection[] }) {
-  const { video, mode, videoRef, minimize, close, consumePendingSeek } = usePlayer()
+  const { video, mode, videoRef, minimize, close, consumePendingSeek, next, hasNext } = usePlayer()
   const { theme } = useTheme()
   const [userMaximized, setUserMaximized] = useState(true)
   const [redownloading, setRedownloading] = useState(false)
+  const [offlineRemoveConfirmOpen, setOfflineRemoveConfirmOpen] = useState(false)
   const offline = useOfflineState(video?.id ?? -1)
 
   useEffect(() => {
     if (videoRef.current) videoRef.current.volume = 0.8
   }, [videoRef])
 
-  // Escape minimizes (keeps audio playing) instead of closing
+  // Escape minimizes (keeps audio playing) instead of closing — unless a
+  // dialog is open, in which case Escape belongs to the dialog.
   useEffect(() => {
-    if (mode !== 'full') return
+    if (mode !== 'full' || offlineRemoveConfirmOpen) return
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') minimize() }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [mode, minimize])
+  }, [mode, minimize, offlineRemoveConfirmOpen])
 
   if (!video || mode === 'closed') return null
 
@@ -87,6 +74,7 @@ export default function PersistentPlayer({ collections }: { collections: Collect
           className="w-full h-full"
           style={{ objectFit: 'contain', display: 'block' }}
           onCanPlay={handleCanPlay}
+          onEnded={() => { if (hasNext) next() }}
         />
 
         {/* Full mode: title bar with minimize + close */}
@@ -256,11 +244,7 @@ export default function PersistentPlayer({ collections }: { collections: Collect
                     </div>
                   ) : offline.status === 'available' ? (
                     <button
-                      onClick={() => {
-                        if (window.confirm('Remove this video from offline storage?')) {
-                          void removeOfflineVideo(video.id)
-                        }
-                      }}
+                      onClick={() => setOfflineRemoveConfirmOpen(true)}
                       className="text-xs underline transition-opacity hover:opacity-80"
                       style={{ color: theme.accent }}
                     >
@@ -313,6 +297,16 @@ export default function PersistentPlayer({ collections }: { collections: Collect
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={offlineRemoveConfirmOpen}
+        title="Remove offline copy"
+        message="Remove this video from offline storage?"
+        confirmLabel="Remove"
+        destructive
+        onConfirm={() => void removeOfflineVideo(video.id)}
+        onClose={() => setOfflineRemoveConfirmOpen(false)}
+      />
     </>
   )
 }

@@ -1,39 +1,13 @@
-export interface Collection {
-  id: number
-  name: string
-  description: string | null
-  color: string
-  sort_order: number
-  video_count: number
-  created_at: string
-}
-
-export interface Video {
-  id: number
-  collection_id: number | null
-  page_url: string
-  title: string | null
-  description: string | null
-  duration: number | null
-  thumbnail_url: string | null
-  site: string | null
-  added_at: string
-  updated_at: string
-  fetch_status: 'pending' | 'ok' | 'error'
-  fetch_error: string | null
-  notes: string | null
-  local_path: string | null
-}
-
-export interface PaginatedResponse<T> {
-  items: T[]
-  total: number
-  page: number
-  totalPages: number
-}
-
-export interface CollectionsResponse {
-  items: Collection[]
-  totalVideoCount: number
-  uncategorizedCount: number
-}
+// API types are defined once on the server and re-exported here type-only,
+// so client and server can't drift. The import is erased at build time.
+export type {
+  DesktopId,
+  FetchStatus,
+  Collection,
+  Video,
+  Job,
+  JobKind,
+  JobStatus,
+  PaginatedResponse,
+  CollectionsResponse,
+} from '../../server/src/types/api'

@@ -1,40 +1,49 @@
 import { Router, Request, Response } from 'express';
 import { pipeline } from 'node:stream';
-import { access, unlink } from 'node:fs/promises';
+import { access, writeFile, unlink } from 'node:fs/promises';
+import path from 'node:path';
 import fetch from 'node-fetch';
-import { videosRepo } from '../db/repositories/videos.js';
-import { collectionsRepo } from '../db/repositories/collections.js';
+import { videosRepo, type VideoSort } from '../db/repositories/videos.js';
 import { jobsRepo } from '../db/repositories/jobs.js';
-import { getDb, markDirty } from '../db/connection.js';
 import { getStreamUrl, extractVideoInfo } from '../services/extractor.service.js';
 import {
   ingestNewVideo,
-  reingestVideo,
   enqueueDownload,
-  enqueueMp3Export,
-  enqueueOutputCopy,
   deleteVideoCascade,
   cleanupAndRetryVideo,
+  applyVideoUpdate,
+  bulkMoveVideos,
 } from '../services/videoIngestion.service.js';
 import { guardOutboundUrl } from '../utils/url-guard.js';
-import { writeSidecarForVideo, deleteSidecar } from '../utils/sidecar.js';
+import { writeSidecarForVideo } from '../utils/sidecar.js';
+import { parseDesktopId } from '../utils/desktop.js';
+import { config } from '../config.js';
 
 const router = Router();
 
-// Cache stream URLs to avoid re-running yt-dlp on every browser range request
-const streamUrlCache = new Map<number, { url: string; expiresAt: number }>();
+// Cache stream URLs to avoid re-running yt-dlp on every browser range request.
+// The in-flight promise is cached (not just the resolved URL) so concurrent
+// range requests on a cache miss share a single yt-dlp process.
+// ponytail: FIFO eviction via Map insertion order, upgrade to LRU if cache pressure shows
+const STREAM_URL_CACHE_MAX = 200;
 const STREAM_URL_TTL_MS = 4 * 60 * 60 * 1000;
+const streamUrlCache = new Map<number, { promise: Promise<string>; expiresAt: number }>();
 
-async function getCachedStreamUrl(id: number, pageUrl: string): Promise<string> {
+function getCachedStreamUrl(id: number, pageUrl: string): Promise<string> {
+  const now = Date.now();
   const cached = streamUrlCache.get(id);
-  if (cached && cached.expiresAt > Date.now()) return cached.url;
-  const url = await getStreamUrl(pageUrl);
-  streamUrlCache.set(id, { url, expiresAt: Date.now() + STREAM_URL_TTL_MS });
-  return url;
-}
+  if (cached && cached.expiresAt > now) return cached.promise;
+  if (cached) streamUrlCache.delete(id);
 
-function pickDesktop(value: unknown): 1 | 2 {
-  return value === 2 || value === '2' ? 2 : 1;
+  // Evict oldest entry when at capacity
+  if (streamUrlCache.size >= STREAM_URL_CACHE_MAX) {
+    streamUrlCache.delete(streamUrlCache.keys().next().value!);
+  }
+
+  const promise = getStreamUrl(pageUrl);
+  streamUrlCache.set(id, { promise, expiresAt: now + STREAM_URL_TTL_MS });
+  promise.catch(() => { if (streamUrlCache.get(id)?.promise === promise) streamUrlCache.delete(id); });
+  return promise;
 }
 
 // GET /api/videos
@@ -43,14 +52,18 @@ router.get('/', (req: Request, res: Response) => {
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 24));
   const q = (req.query.q as string | undefined)?.trim() || undefined;
-  const desktopId = pickDesktop(req.query.desktop);
+  const desktopId = parseDesktopId(req.query.desktop);
 
   let collection: number | 'null' | undefined;
   if (collectionId === 'null' || collectionId === '') collection = 'null';
   else if (collectionId !== undefined) collection = Number(collectionId);
 
-  const { items, total } = videosRepo.list({ desktopId, collectionId: collection, q, page, limit });
-  res.json({ items, total, page, totalPages: Math.ceil(total / limit) });
+  const SORTS = new Set(['newest', 'oldest', 'title', 'duration', 'site']);
+  const sort = SORTS.has(req.query.sort as string) ? (req.query.sort as VideoSort) : 'newest';
+
+  const { items, total } = videosRepo.list({ desktopId, collectionId: collection, q, page, limit, sort });
+  const hasPendingAny = videosRepo.hasPendingAny(desktopId);
+  res.json({ items, total, page, totalPages: Math.ceil(total / limit), hasPendingAny });
 });
 
 // POST /api/videos
@@ -69,7 +82,7 @@ router.post('/', (req: Request, res: Response) => {
     return;
   }
 
-  const desktopId = pickDesktop(desktop_id);
+  const desktopId = parseDesktopId(desktop_id);
   const trimmed = url.trim();
 
   if (videosRepo.existsByUrl(trimmed, desktopId)) {
@@ -149,6 +162,11 @@ router.get('/:id/stream', async (req: Request, res: Response) => {
         return;
       }
       const retried = await fetch(freshUrl, { headers: proxyHeaders });
+      if (retried.status >= 400) {
+        streamUrlCache.delete(id);
+        if (!res.headersSent) res.status(502).json({ error: 'Stream URL unavailable' });
+        return;
+      }
       pipeUpstream(retried, res);
       return;
     }
@@ -193,6 +211,7 @@ router.post('/:id/refresh', async (req: Request, res: Response) => {
       fetchStatus: 'ok',
       fetchError: null,
     });
+    await unlink(path.join(config.thumbsDir, `${id}.jpg`)).catch(() => {});
     if (updated?.local_path) await writeSidecarForVideo(id);
     res.json(updated);
   } catch (err) {
@@ -223,18 +242,22 @@ router.post('/:id/cleanup-retry', async (req: Request, res: Response) => {
   res.status(202).json({ ok: true });
 });
 
-// GET /api/videos/:id/thumbnail
+// GET /api/videos/:id/thumbnail — serves from disk cache; fetches and caches on first request
 router.get('/:id/thumbnail', async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const video = videosRepo.findById(id);
-  if (!video) {
-    res.status(404).json({ error: 'Video not found' });
-    return;
-  }
-  if (!video.thumbnail_url) {
+  if (!video || !video.thumbnail_url) {
     res.status(404).json({ error: 'No thumbnail available' });
     return;
   }
+
+  const cachePath = path.join(config.thumbsDir, `${id}.jpg`);
+  try {
+    await access(cachePath);
+    res.setHeader('Cache-Control', 'public, max-age=604800');
+    res.sendFile(cachePath);
+    return;
+  } catch { /* not cached yet */ }
 
   const guard = await guardOutboundUrl(video.thumbnail_url);
   if (!guard.ok) {
@@ -244,14 +267,13 @@ router.get('/:id/thumbnail', async (req: Request, res: Response) => {
 
   try {
     const response = await fetch(video.thumbnail_url);
-    if (!response.ok) {
-      res.status(502).json({ error: 'Failed to fetch thumbnail' });
-      return;
-    }
+    if (!response.ok) { res.status(502).json({ error: 'Failed to fetch thumbnail' }); return; }
     const contentType = response.headers.get('content-type') ?? 'image/jpeg';
+    const buf = Buffer.from(await response.arrayBuffer());
+    writeFile(cachePath, buf).catch(() => {}); // fire-and-forget
     res.setHeader('Content-Type', contentType);
-    res.setHeader('Cache-Control', 'public, max-age=86400');
-    response.body?.pipe(res);
+    res.setHeader('Cache-Control', 'public, max-age=604800');
+    res.send(buf);
   } catch (err) {
     res.status(502).json({ error: (err as Error).message });
   }
@@ -270,53 +292,22 @@ router.put('/:id', async (req: Request, res: Response) => {
     redownload?: boolean;
   };
 
-  const existing = videosRepo.findById(id);
-  if (!existing) {
+  const result = await applyVideoUpdate(id, {
+    collectionId: body.collection_id,
+    notes: body.notes,
+    title: body.title,
+    pageUrl: body.page_url,
+    redownload: body.redownload,
+    outputMp4: body.output_mp4,
+    downloadMp3: body.download_mp3,
+  });
+  if (!result) {
     res.status(404).json({ error: 'Video not found' });
     return;
   }
 
-  const urlChanged = !!(body.page_url && body.page_url.trim() !== existing.page_url);
-
-  if (body.redownload && urlChanged) {
-    streamUrlCache.delete(id);
-    const newUrl = body.page_url!.trim();
-    const updated = reingestVideo(id, newUrl, {
-      outputMp4: body.output_mp4,
-      downloadMp3: body.download_mp3,
-    });
-    if (body.collection_id !== undefined && body.collection_id !== existing.collection_id) {
-      videosRepo.update(id, { collectionId: body.collection_id });
-      collectionsRepo.pruneIfEmpty(existing.collection_id);
-    }
-    res.json(videosRepo.findById(id) ?? updated);
-    return;
-  }
-
-  const updated = videosRepo.update(id, {
-    collectionId: body.collection_id,
-    notes: body.notes,
-    title: body.title,
-    pageUrl: urlChanged ? body.page_url!.trim() : undefined,
-  });
-
-  if (body.collection_id !== undefined && body.collection_id !== existing.collection_id) {
-    collectionsRepo.pruneIfEmpty(existing.collection_id);
-  }
-
-  if (urlChanged) streamUrlCache.delete(id);
-
-  if (body.output_mp4 && existing.local_path) enqueueOutputCopy(id);
-  if (body.download_mp3) enqueueMp3Export(id);
-
-  const titleChanged = body.title !== undefined && body.title !== existing.title;
-  const collectionChanged =
-    body.collection_id !== undefined && body.collection_id !== existing.collection_id;
-  if (updated?.local_path && (titleChanged || collectionChanged)) {
-    await writeSidecarForVideo(id);
-  }
-
-  res.json(updated);
+  if (result.urlChanged) streamUrlCache.delete(id);
+  res.json(result.video);
 });
 
 // POST /api/videos/:id/refresh-thumbnail — enqueue a fetch_thumbnail job
@@ -340,7 +331,7 @@ router.post('/:id/refresh-thumbnail', (req: Request, res: Response) => {
 });
 
 // POST /api/videos/bulk-move — move many videos to another desktop
-router.post('/bulk-move', async (req: Request, res: Response) => {
+router.post('/bulk-move', (req: Request, res: Response) => {
   const body = req.body as { ids?: unknown; desktop_id?: unknown };
   const desktopId = Number(body.desktop_id);
   if (desktopId !== 1 && desktopId !== 2) {
@@ -357,86 +348,17 @@ router.post('/bulk-move', async (req: Request, res: Response) => {
     return;
   }
 
-  const db = getDb();
-  // Remap each video's collection to the same-named collection on the target
-  // desktop (creating it on the fly). Collections are per-desktop, so we can't
-  // just carry the old collection_id across — it would dangle on desk 1 while
-  // the video lives on desk 2.
-  const collectionRemap = new Map<number, number | null>();
-  let moved = 0;
-  let movedCollections = 0;
-  const sourceCollections = new Set<number>();
-
-  for (const id of ids) {
-    const v = videosRepo.findById(id);
-    if (!v) continue;
-    if (v.desktop_id === desktopId) {
-      // Already on the target desktop — nothing to do.
-      continue;
-    }
-
-    let newCollectionId: number | null = null;
-    if (v.collection_id != null) {
-      const cached = collectionRemap.get(v.collection_id);
-      if (cached !== undefined) {
-        newCollectionId = cached;
-      } else {
-        const src = collectionsRepo.findById(v.collection_id);
-        if (src) {
-          const existing = collectionsRepo.findByNameAndDesktop(src.name, desktopId as 1 | 2);
-          if (existing) {
-            newCollectionId = existing.id;
-          } else {
-            const created = collectionsRepo.create({
-              name: src.name,
-              description: src.description,
-              color: src.color,
-              desktopId: desktopId as 1 | 2,
-            });
-            newCollectionId = created.id;
-            movedCollections++;
-          }
-          collectionRemap.set(v.collection_id, newCollectionId);
-          sourceCollections.add(v.collection_id);
-        }
-      }
-    }
-
-    db.run(
-      `UPDATE videos SET desktop_id = $d, collection_id = $cid, updated_at = datetime('now') WHERE id = $id`,
-      { $d: desktopId, $cid: newCollectionId, $id: id },
-    );
-    moved++;
-
-    // Sidecar collection name is unchanged (we matched by name), but desk
-    // mapping isn't recorded in sidecars. Rewriting is a no-op for content
-    // here; skip to keep this fast.
-  }
-
-  for (const cid of sourceCollections) collectionsRepo.pruneIfEmpty(cid);
-  if (moved > 0) markDirty();
-
-  res.json({ moved, movedCollections, requested: ids.length });
+  res.json(bulkMoveVideos(ids, desktopId));
 });
 
 // DELETE /api/videos/:id
-router.delete('/:id', (req: Request, res: Response) => {
+router.delete('/:id', async (req: Request, res: Response) => {
   const id = Number(req.params.id);
-  const video = videosRepo.findById(id);
-  if (!video) {
+  if (!(await deleteVideoCascade(id))) {
     res.status(404).json({ error: 'Video not found' });
     return;
   }
-  const localPath = video.local_path;
-  deleteVideoCascade(id);
-  if (localPath) {
-    unlink(localPath).catch(e => {
-      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.error(`[delete] failed to remove file ${localPath}:`, (e as Error).message);
-      }
-    });
-    deleteSidecar(localPath);
-  }
+  streamUrlCache.delete(id);
   res.json({ status: 'ok' });
 });
 

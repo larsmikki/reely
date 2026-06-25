@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useDownloadPath } from '@/hooks/useDownloadPath'
 import { updateVideo, createCollection } from '@/api'
-import { Button, Input, Select, Modal, ColorSwatches, PRESET_COLORS, OutputOptions } from '@/components/ui'
+import { Button, Input, Select, Textarea, Modal, ColorSwatches, PRESET_COLORS, OutputOptions } from '@/components/ui'
 import type { Video, Collection } from '@/types'
 
 interface Props {
@@ -17,10 +17,14 @@ export default function EditVideoModal({ video, collections, onCollectionsChange
   const { theme } = useTheme()
   const outputDir = useDownloadPath()
   const [url, setUrl] = useState(video.page_url)
+  const [title, setTitle] = useState(video.title ?? '')
+  const [notes, setNotes] = useState(video.notes ?? '')
   const [collectionId, setCollectionId] = useState<number | ''>(video.collection_id ?? '')
   const [outputMp3, setOutputMp3] = useState(false)
   const [outputMp4, setOutputMp4] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [redownload, setRedownload] = useState(false)
 
   const [showNewColl, setShowNewColl] = useState(false)
   const [newCollName, setNewCollName] = useState('')
@@ -37,20 +41,23 @@ export default function EditVideoModal({ video, collections, onCollectionsChange
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+    setError(null)
     try {
-      let redownload = false
-      if (urlChanged) {
-        redownload = window.confirm('URL has changed. Re-download the video from the new URL? This will overwrite all metadata and the local file.')
-      }
+      const trimmedTitle = title.trim()
+      const trimmedNotes = notes.trim()
       await updateVideo(video.id, {
         page_url: urlChanged ? url.trim() : undefined,
-        redownload,
+        redownload: urlChanged && redownload,
         collection_id: collectionId !== '' ? Number(collectionId) : null,
+        title: trimmedTitle !== (video.title ?? '') ? (trimmedTitle || null) : undefined,
+        notes: trimmedNotes !== (video.notes ?? '') ? (trimmedNotes || null) : undefined,
         download_mp3: outputMp3,
         output_mp4: outputMp4,
       })
       onSaved()
-    } catch { /* ignore */ }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save changes.')
+    }
     finally { setLoading(false) }
   }
 
@@ -73,6 +80,15 @@ export default function EditVideoModal({ video, collections, onCollectionsChange
     <Modal title="Edit video" onClose={onClose}>
       <form onSubmit={handleSave} className="px-6 py-5 flex flex-col gap-4">
         <div>
+          <label className="block text-xs font-semibold mb-1.5 tracking-wide" style={{ color: theme.text2 }}>Title</label>
+          <Input
+            type="text"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            placeholder="Video title"
+          />
+        </div>
+        <div>
           <label className="block text-xs font-semibold mb-1.5 tracking-wide" style={{ color: theme.text2 }}>URL</label>
           <Input
             type="url"
@@ -82,6 +98,44 @@ export default function EditVideoModal({ video, collections, onCollectionsChange
             className="font-mono"
             highlighted={urlChanged}
           />
+          {urlChanged && (
+            <div
+              className="mt-2 p-3 rounded-xl flex flex-col gap-2"
+              style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}
+            >
+              <p className="text-xs font-semibold tracking-wide" style={{ color: theme.text }}>
+                URL changed — what should happen on save?
+              </p>
+              <label className="flex items-start gap-2 cursor-pointer text-sm" style={{ color: theme.text }}>
+                <input
+                  type="radio"
+                  name="url-change-action"
+                  checked={!redownload}
+                  onChange={() => setRedownload(false)}
+                  className="mt-0.5"
+                  style={{ accentColor: theme.accent }}
+                />
+                <span>
+                  Keep current file
+                  <span className="block text-xs" style={{ color: theme.text2 }}>Only the stored URL is updated.</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 cursor-pointer text-sm" style={{ color: theme.text }}>
+                <input
+                  type="radio"
+                  name="url-change-action"
+                  checked={redownload}
+                  onChange={() => setRedownload(true)}
+                  className="mt-0.5"
+                  style={{ accentColor: theme.accent }}
+                />
+                <span>
+                  Re-download from the new URL
+                  <span className="block text-xs" style={{ color: theme.text2 }}>Replaces all metadata and the local file.</span>
+                </span>
+              </label>
+            </div>
+          )}
         </div>
         <div>
           <div className="flex items-center justify-between mb-1.5">
@@ -129,6 +183,16 @@ export default function EditVideoModal({ video, collections, onCollectionsChange
           )}
         </div>
 
+        <div>
+          <label className="block text-xs font-semibold mb-1.5 tracking-wide" style={{ color: theme.text2 }}>Notes (optional)</label>
+          <Textarea
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="Add a note..."
+            rows={2}
+          />
+        </div>
+
         {outputDir && (
           <OutputOptions
             outputDir={outputDir}
@@ -138,6 +202,8 @@ export default function EditVideoModal({ video, collections, onCollectionsChange
             onMp4Change={setOutputMp4}
           />
         )}
+
+        {error && <p className="text-sm" style={{ color: '#e11d48' }}>{error}</p>}
 
         <Button type="submit" variant="primary" fullWidth disabled={loading}>
           {loading ? 'Saving...' : 'Save'}

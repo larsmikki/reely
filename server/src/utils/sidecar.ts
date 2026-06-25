@@ -60,16 +60,16 @@ export interface ImportSidecarsResult {
 
 const DEFAULT_COLLECTION_COLOR = '#e11d48';
 
-function parseSidecarFilename(name: string): { videoId: number; mediaFile: string } | null {
-  // Sidecar files are named "<id>.<ext>.json", sibling media is "<id>.<ext>"
+function parseSidecarFilename(name: string): { videoId: number | null; mediaFile: string } | null {
+  // Sidecar files are named "<stem>.<ext>.json", sibling media is "<stem>.<ext>"
+  // Old format: "<id>.<ext>.json" (numeric stem); new format: "<title>.<ext>.json"
   if (!name.endsWith('.json')) return null;
   const base = name.slice(0, -'.json'.length);
+  if (!base.includes('.')) return null;
   const dot = base.indexOf('.');
-  if (dot <= 0) return null;
   const idPart = base.slice(0, dot);
-  if (!/^\d+$/.test(idPart)) return null;
-  const videoId = Number(idPart);
-  if (!Number.isFinite(videoId) || videoId <= 0) return null;
+  const videoId = /^\d+$/.test(idPart) ? Number(idPart) : null;
+  if (videoId !== null && (!Number.isFinite(videoId) || videoId <= 0)) return null;
   return { videoId, mediaFile: base };
 }
 
@@ -148,13 +148,17 @@ export async function importSidecars(): Promise<ImportSidecarsResult> {
       const title = typeof data.title === 'string' ? data.title : null;
       const site = typeof data.site === 'string' ? data.site : null;
 
-      // "Sidecar wins": remove any existing row with this id or this page_url
-      // (within the target desktop) before reinserting. We don't touch files —
-      // the conflicting row may have pointed at the very file we're importing.
+      // "Sidecar wins": remove conflicting rows before reinserting.
+      // Old numeric-ID format also matches on id; title-based format matches on page_url only.
+      const hasId = parsed.videoId !== null;
       const conflicts = allRows<{ id: number }>(
         db.exec(
-          'SELECT id FROM videos WHERE id = $id OR (page_url = $url AND desktop_id = $d)',
-          { $id: parsed.videoId, $url: pageUrl, $d: desktopId },
+          hasId
+            ? 'SELECT id FROM videos WHERE id = $id OR (page_url = $url AND desktop_id = $d)'
+            : 'SELECT id FROM videos WHERE page_url = $url AND desktop_id = $d',
+          hasId
+            ? { $id: parsed.videoId, $url: pageUrl, $d: desktopId }
+            : { $url: pageUrl, $d: desktopId },
         ),
       );
       if (conflicts.length > 0) {
@@ -165,10 +169,10 @@ export async function importSidecars(): Promise<ImportSidecarsResult> {
       }
 
       db.run(
-        `INSERT INTO videos (id, page_url, title, site, collection_id, desktop_id, local_path, fetch_status)
-         VALUES ($id, $url, $title, $site, $cid, $d, $path, 'ok')`,
+        `INSERT INTO videos (${hasId ? 'id, ' : ''}page_url, title, site, collection_id, desktop_id, local_path, fetch_status)
+         VALUES (${hasId ? '$id, ' : ''}$url, $title, $site, $cid, $d, $path, 'ok')`,
         {
-          $id: parsed.videoId,
+          ...(hasId ? { $id: parsed.videoId } : {}),
           $url: pageUrl,
           $title: title,
           $site: site,
@@ -177,11 +181,18 @@ export async function importSidecars(): Promise<ImportSidecarsResult> {
           $path: mediaPath,
         },
       );
+      const importedVideoId =
+        parsed.videoId ?? firstRow<{ id: number }>(db.exec('SELECT last_insert_rowid() AS id'))?.id;
+      if (!importedVideoId) {
+        result.failed++;
+        continue;
+      }
+
       // Sidecars don't carry a thumbnail URL — re-fetch it from the source page
       // asynchronously so the import returns quickly. This does not redownload
       // the video; see runFetchThumbnail in jobs.service.ts.
       jobsRepo.enqueue({
-        videoId: parsed.videoId,
+        videoId: importedVideoId,
         kind: 'fetch_thumbnail',
         payload: { url: pageUrl },
       });

@@ -3,6 +3,7 @@ import { Link, Outlet, useLocation } from 'react-router-dom'
 import { useTheme } from '@/contexts/ThemeContext'
 import { usePlayer } from '@/contexts/PlayerContext'
 import { useDesktop } from '@/contexts/DesktopContext'
+import { useJobs, JOB_KIND_LABEL } from '@/contexts/JobsContext'
 import Footer from '@/components/Footer'
 
 function formatTime(seconds: number): string {
@@ -15,7 +16,7 @@ function formatTime(seconds: number): string {
 }
 
 function MiniPlayerBar() {
-  const { video, mode, videoRef, expand, close } = usePlayer()
+  const { video, mode, videoRef, expand, close, next, previous, hasNext, hasPrevious } = usePlayer()
   const { theme } = useTheme()
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -98,6 +99,17 @@ function MiniPlayerBar() {
         </div>
 
         <button
+          onClick={previous}
+          disabled={!hasPrevious}
+          className="w-9 h-9 flex items-center justify-center rounded-lg transition-colors disabled:opacity-30"
+          style={{ color: theme.text2 }}
+          title="Previous"
+          aria-label="Previous video"
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg>
+        </button>
+
+        <button
           onClick={togglePlay}
           className="w-10 h-10 flex items-center justify-center rounded-lg transition-colors"
           style={{ color: theme.text }}
@@ -109,6 +121,17 @@ function MiniPlayerBar() {
           ) : (
             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
           )}
+        </button>
+
+        <button
+          onClick={next}
+          disabled={!hasNext}
+          className="w-9 h-9 flex items-center justify-center rounded-lg transition-colors disabled:opacity-30"
+          style={{ color: theme.text2 }}
+          title="Next"
+          aria-label="Next video"
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm10-12v12h2V6h-2z" /></svg>
         </button>
 
         <button
@@ -143,6 +166,97 @@ function LogoMark({ size = 28 }: { size?: number }) {
   return <img src="/favicon.svg" width={size} height={size} alt="Fetchr" className="shrink-0" />
 }
 
+// Header chip that surfaces the job queue globally: spins with a count while
+// jobs run, turns into a warning when something failed. Click for details.
+function ActivityIndicator() {
+  const { theme } = useTheme()
+  const { jobs } = useJobs()
+  const [open, setOpen] = useState(false)
+
+  const active = jobs.filter(j => j.status === 'pending' || j.status === 'running')
+  const failed = jobs.filter(j => j.status === 'error')
+  if (active.length === 0 && failed.length === 0) return null
+
+  const hasFailures = failed.length > 0
+  const shown = [...active, ...failed].sort((a, b) => a.id - b.id)
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(p => !p)}
+        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150"
+        style={{
+          color: hasFailures ? '#dc2626' : theme.accent,
+          background: hasFailures ? '#dc262622' : `${theme.accent}22`,
+        }}
+        title={hasFailures ? 'Some downloads failed' : 'Downloads in progress'}
+        aria-label="Download activity"
+      >
+        {active.length > 0 ? (
+          <span
+            className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin"
+            style={{ borderColor: `${theme.accent} transparent ${theme.accent} ${theme.accent}` }}
+          />
+        ) : (
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m0 3.75h.008v.008H12v-.008zM21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        )}
+        <span className="tabular-nums">{active.length > 0 ? active.length : failed.length}</span>
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div
+            className="absolute right-0 top-12 z-20 w-72 py-1.5 rounded-xl shadow-lg"
+            style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+          >
+            {shown.slice(0, 8).map(job => (
+              <div key={job.id} className="px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium truncate" style={{ color: theme.text }}>
+                    {JOB_KIND_LABEL[job.kind]}
+                  </span>
+                  <span
+                    className="text-[11px] shrink-0"
+                    style={{ color: job.status === 'error' ? '#dc2626' : theme.text2 }}
+                  >
+                    {job.status}
+                  </span>
+                </div>
+                {job.status === 'running' && (
+                  <div className="mt-1 h-1 rounded overflow-hidden" style={{ background: theme.surface2 }}>
+                    <div
+                      className="h-full transition-all"
+                      style={{ width: `${Math.round((job.progress ?? 0) * 100)}%`, background: theme.accent }}
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
+            {shown.length > 8 && (
+              <p className="px-3 py-1 text-[11px]" style={{ color: theme.text2 }}>
+                +{shown.length - 8} more…
+              </p>
+            )}
+            <div className="mt-1 pt-1.5 px-3 pb-1" style={{ borderTop: `1px solid ${theme.border}` }}>
+              <Link
+                to="/settings"
+                onClick={() => setOpen(false)}
+                className="text-xs font-medium transition-opacity hover:opacity-80"
+                style={{ color: theme.accent }}
+              >
+                Manage queue →
+              </Link>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function MusicModeButton() {
   const { theme } = useTheme()
   const { musicMode, toggleMusicMode } = usePlayer()
@@ -166,7 +280,7 @@ function MusicModeButton() {
 
 export default function Layout() {
   const { theme } = useTheme()
-  const { desktop, switchDesktop } = useDesktop()
+  const { desktop, switchDesktop, deskNames } = useDesktop()
   const location = useLocation()
 
   return (
@@ -197,14 +311,16 @@ export default function Layout() {
                     ? { background: `${theme.accent}22`, color: theme.accent }
                     : { color: theme.text2 }
                 }
-                title={`Desktop ${d}`}
+                title={`Switch to ${deskNames[d]} — a separate library with its own videos and collections`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                   <path d="M3 4a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 13a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3zM13 3a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1V4a1 1 0 00-1-1h-3zM13 12a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1v-3a1 1 0 00-1-1h-3z" />
                 </svg>
-                <span className="hidden sm:inline">Desk {d}</span>
+                <span className="hidden sm:inline">{deskNames[d]}</span>
               </button>
             ))}
+
+            <ActivityIndicator />
 
             <MusicModeButton />
 

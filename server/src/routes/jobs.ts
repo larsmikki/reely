@@ -4,6 +4,9 @@ import { onJobChange } from '../services/jobs.service.js';
 
 const router = Router();
 
+// SSE comment-ping cadence; keeps idle connections alive through proxies.
+const SSE_HEARTBEAT_MS = 25000;
+
 // GET /api/jobs — active jobs by default; ?video_id= for a video's history;
 // ?status=error for the most recent permanently-failed jobs.
 router.get('/', (req: Request, res: Response) => {
@@ -38,7 +41,7 @@ router.get('/stream', (req: Request, res: Response) => {
 
   const heartbeat = setInterval(() => {
     try { res.write(`: ping\n\n`); } catch { /* connection closed */ }
-  }, 25000);
+  }, SSE_HEARTBEAT_MS);
 
   req.on('close', () => {
     clearInterval(heartbeat);

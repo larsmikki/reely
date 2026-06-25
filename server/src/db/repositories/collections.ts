@@ -1,13 +1,15 @@
 import type { BindParams } from 'sql.js';
 import { getDb, markDirty } from '../connection.js';
 import { firstRow, allRows, scalar } from './rows.js';
-import type { Collection } from '../../types/index.js';
+import type { Collection, DesktopId } from '../../types/index.js';
 
 export interface CollectionCreate {
   name: string;
   description: string | null;
   color: string;
-  desktopId: 1 | 2;
+  desktopId: DesktopId;
+  // When omitted, the collection is appended after the desktop's current max.
+  sortOrder?: number;
 }
 
 export interface CollectionPatch {
@@ -25,7 +27,7 @@ const SELECT_WITH_COUNT = `
 `;
 
 export const collectionsRepo = {
-  list(desktopId: 1 | 2): Collection[] {
+  list(desktopId: DesktopId): Collection[] {
     return allRows<Collection>(
       getDb().exec(
         `${SELECT_WITH_COUNT}
@@ -43,7 +45,7 @@ export const collectionsRepo = {
     );
   },
 
-  findByNameAndDesktop(name: string, desktopId: 1 | 2): Collection | null {
+  findByNameAndDesktop(name: string, desktopId: DesktopId): Collection | null {
     return firstRow<Collection>(
       getDb().exec(
         `${SELECT_WITH_COUNT} WHERE c.name = $name AND c.desktop_id = $d GROUP BY c.id`,
@@ -54,11 +56,15 @@ export const collectionsRepo = {
 
   create(input: CollectionCreate): Collection {
     const db = getDb();
-    const maxOrder = scalar<number>(
-      db.exec('SELECT COALESCE(MAX(sort_order), -1) FROM collections WHERE desktop_id = $d', {
-        $d: input.desktopId,
-      }),
-    ) ?? -1;
+    let sortOrder = input.sortOrder;
+    if (sortOrder === undefined) {
+      const maxOrder = scalar<number>(
+        db.exec('SELECT COALESCE(MAX(sort_order), -1) FROM collections WHERE desktop_id = $d', {
+          $d: input.desktopId,
+        }),
+      ) ?? -1;
+      sortOrder = maxOrder + 1;
+    }
 
     db.run(
       `INSERT INTO collections (name, description, color, sort_order, desktop_id)
@@ -67,7 +73,7 @@ export const collectionsRepo = {
         $name: input.name,
         $desc: input.description,
         $color: input.color,
-        $sort: maxOrder + 1,
+        $sort: sortOrder,
         $d: input.desktopId,
       },
     );
@@ -123,13 +129,28 @@ export const collectionsRepo = {
     }
   },
 
-  countTotalVideos(desktopId: 1 | 2): number {
+  countTotalVideos(desktopId: DesktopId): number {
     return scalar<number>(
       getDb().exec('SELECT COUNT(*) FROM videos WHERE desktop_id = $d', { $d: desktopId }),
     ) ?? 0;
   },
 
-  countUncategorized(desktopId: 1 | 2): number {
+  // All collections across both desktops, for the JSON backup export.
+  exportAll(): Array<{
+    name: string;
+    description: string | null;
+    color: string;
+    sort_order: number;
+    desktop_id: DesktopId;
+  }> {
+    return allRows(
+      getDb().exec(
+        'SELECT name, description, color, sort_order, desktop_id FROM collections ORDER BY desktop_id, sort_order',
+      ),
+    );
+  },
+
+  countUncategorized(desktopId: DesktopId): number {
     return scalar<number>(
       getDb().exec(
         'SELECT COUNT(*) FROM videos WHERE collection_id IS NULL AND desktop_id = $d',
@@ -138,3 +159,4 @@ export const collectionsRepo = {
     ) ?? 0;
   },
 };
+

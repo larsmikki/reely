@@ -1,4 +1,4 @@
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import { tmpdir } from 'os';
@@ -6,9 +6,15 @@ import { existsSync } from 'fs';
 import { mkdtemp, readdir, rename, copyFile, unlink, rm } from 'fs/promises';
 import { config } from '../config.js';
 import { settingsRepo } from '../db/repositories/settings.js';
+import { sanitizeForFilename } from '../utils/filenames.js';
 import type { ExtractedInfo } from '../types/index.js';
 
 const execFileAsync = promisify(execFile);
+
+// --dump-json output for long videos can be large; downloads also stream
+// progress text through stdout/stderr.
+const DUMP_JSON_MAX_BUFFER = 10 * 1024 * 1024;
+const DOWNLOAD_MAX_BUFFER = 50 * 1024 * 1024;
 
 // Cookie auth args for yt-dlp, driven by the `youtube_cookies_mode` setting:
 //   'file'    → --cookies <uploaded cookies.txt> (recommended; works in Docker)
@@ -59,50 +65,32 @@ function extractSite(pageUrl: string): string | null {
   }
 }
 
+function isDirectPlayable(f: YtDlpFormat): boolean {
+  const notHlsDash = f.protocol !== 'm3u8' && f.protocol !== 'm3u8_native' && f.protocol !== 'dash';
+  const hasVideo = f.vcodec !== 'none' && f.vcodec !== undefined;
+  const hasAudio = f.acodec !== 'none';
+  return notHlsDash && !!f.url && hasVideo && hasAudio;
+}
+
+// Prefer H.264 (avc) for broadest browser compatibility, then highest resolution.
+function bestByCompatibility(formats: YtDlpFormat[]): YtDlpFormat | null {
+  if (formats.length === 0) return null;
+  const h264 = formats.filter(f => !f.vcodec || f.vcodec.startsWith('avc'));
+  const candidates = h264.length > 0 ? h264 : formats;
+  return [...candidates].sort((a, b) => (b.height ?? 0) - (a.height ?? 0))[0];
+}
+
 function pickBestStreamUrl(output: YtDlpOutput): string | null {
-  // If no formats array, fall back to top-level url
-  if (!output.formats || output.formats.length === 0) {
-    return output.url ?? null;
-  }
-
-  // Filter to direct MP4 formats with both video and audio (not HLS/DASH)
-  const directMp4 = output.formats.filter(f => {
-    const isMp4 = f.ext === 'mp4';
-    const isDirect = f.protocol === 'https' || f.protocol === 'http' || !f.protocol;
-    const notHlsDash = f.protocol !== 'm3u8' && f.protocol !== 'm3u8_native' && f.protocol !== 'dash';
-    const hasUrl = !!f.url;
-    const hasVideo = f.vcodec !== 'none' && f.vcodec !== undefined;
-    const hasAudio = f.acodec !== 'none';
-    return isMp4 && isDirect && notHlsDash && hasUrl && hasVideo && hasAudio;
-  });
-
-  if (directMp4.length > 0) {
-    // Prefer H.264 (avc) for broadest browser compatibility; fall back to whatever is available
-    const h264 = directMp4.filter(f => !f.vcodec || f.vcodec.startsWith('avc'));
-    const candidates = h264.length > 0 ? h264 : directMp4;
-    candidates.sort((a, b) => (b.height ?? 0) - (a.height ?? 0));
-    return candidates[0].url;
-  }
-
-  // Fallback: any format with a direct URL that has both video and audio
-  const anyDirect = output.formats.filter(f => {
-    const notHlsDash = f.protocol !== 'm3u8' && f.protocol !== 'm3u8_native' && f.protocol !== 'dash';
-    const hasUrl = !!f.url;
-    const hasVideo = f.vcodec !== 'none' && f.vcodec !== undefined;
-    const hasAudio = f.acodec !== 'none';
-    return notHlsDash && hasUrl && hasVideo && hasAudio;
-  });
-
-  if (anyDirect.length > 0) {
-    // Again prefer H.264
-    const h264 = anyDirect.filter(f => !f.vcodec || f.vcodec.startsWith('avc'));
-    const candidates = h264.length > 0 ? h264 : anyDirect;
-    candidates.sort((a, b) => (b.height ?? 0) - (a.height ?? 0));
-    return candidates[0].url;
-  }
-
-  // Last resort: top-level url
-  return output.url ?? null;
+  const formats = output.formats ?? [];
+  // Strict pass: direct https/http MP4 with both streams; loose pass: any
+  // direct playable format; last resort: yt-dlp's top-level url.
+  const strict = formats.filter(f =>
+    f.ext === 'mp4' &&
+    (f.protocol === 'https' || f.protocol === 'http' || !f.protocol) &&
+    isDirectPlayable(f),
+  );
+  const best = bestByCompatibility(strict) ?? bestByCompatibility(formats.filter(isDirectPlayable));
+  return best?.url ?? output.url ?? null;
 }
 
 function pickBestThumbnail(output: YtDlpOutput): string | null {
@@ -123,7 +111,7 @@ export async function extractVideoInfo(pageUrl: string): Promise<ExtractedInfo &
     const result = await execFileAsync(
       config.ytdlpPath,
       [...cookieArgs(), '--dump-json', '--no-playlist', pageUrl],
-      { maxBuffer: 10 * 1024 * 1024 }, // 10MB
+      { maxBuffer: DUMP_JSON_MAX_BUFFER },
     );
     stdout = result.stdout;
   } catch (err: unknown) {
@@ -164,12 +152,82 @@ export async function getStreamUrl(pageUrl: string): Promise<string> {
   return info.stream_url;
 }
 
-export async function downloadToPath(videoId: number, pageUrl: string, outputDir: string, ffmpegPath: string): Promise<string> {
-  // Use video ID as filename so we can find the file reliably after download
-  const outputTemplate = path.join(outputDir, `${videoId}.%(ext)s`);
-  try {
-    await execFileAsync(
+// Marker for --progress-template so progress lines are unambiguous on stdout.
+const PROGRESS_PREFIX = 'fetchr-progress:';
+const PROGRESS_LINE = new RegExp(`^${PROGRESS_PREFIX}\\s*([\\d.]+)%`);
+
+// Spawn yt-dlp and stream its stdout, reporting download progress (0..1) for
+// each phase yt-dlp prints (a merged download reports video then audio).
+function runYtDlpWithProgress(
+  args: string[],
+  onProgress?: (fraction: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
       config.ytdlpPath,
+      ['--newline', '--progress-template', `download:${PROGRESS_PREFIX}%(progress._percent_str)s`, ...args],
+      { windowsHide: true },
+    );
+    let stderrTail = '';
+    let buffer = '';
+    child.stdout.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString();
+      let nl: number;
+      while ((nl = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        const match = PROGRESS_LINE.exec(line);
+        if (match && onProgress) {
+          const pct = Number(match[1]);
+          if (Number.isFinite(pct)) onProgress(Math.min(1, Math.max(0, pct / 100)));
+        }
+      }
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderrTail = (stderrTail + chunk.toString()).slice(-4000);
+    });
+    child.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'ENOENT') reject(new Error('yt-dlp is not installed or not found in PATH'));
+      else reject(err);
+    });
+    child.on('close', code => {
+      if (code === 0) resolve();
+      else reject(new Error(stderrTail.trim() || `yt-dlp exited with code ${code}`));
+    });
+  });
+}
+
+// Filename stem of a media file or its sidecar ("Title.mp4.json" → "Title").
+function mediaStem(filename: string): string {
+  const base = filename.endsWith('.json') ? filename.slice(0, -'.json'.length) : filename;
+  return path.parse(base).name;
+}
+
+export async function downloadToPath(
+  videoId: number,
+  pageUrl: string,
+  outputDir: string,
+  ffmpegPath: string,
+  title?: string | null,
+  currentLocalPath?: string | null,
+  onProgress?: (fraction: number) => void,
+): Promise<string> {
+  const sanitized = title ? sanitizeForFilename(title) : '';
+  let stem = sanitized || String(videoId);
+
+  // Avoid clobbering another video that already uses this stem (same title).
+  // Re-downloading this video's own file keeps its stem so it overwrites.
+  const ownStem = currentLocalPath ? mediaStem(path.basename(currentLocalPath)) : null;
+  if (stem !== ownStem) {
+    const existing = await readdir(outputDir).catch(() => [] as string[]);
+    if (existing.some(f => mediaStem(f) === stem)) {
+      stem = `${stem} [${videoId}]`;
+    }
+  }
+
+  const outputTemplate = path.join(outputDir, `${stem}.%(ext)s`);
+  try {
+    await runYtDlpWithProgress(
       [
         ...cookieArgs(),
         '--ffmpeg-location', ffmpegPath,
@@ -178,15 +236,17 @@ export async function downloadToPath(videoId: number, pageUrl: string, outputDir
         '-o', outputTemplate,
         pageUrl,
       ],
-      { maxBuffer: 50 * 1024 * 1024 },
+      onProgress,
     );
   } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException & { stderr?: string };
-    if (error.code === 'ENOENT') throw new Error('yt-dlp is not installed or not found in PATH');
-    throw new Error(`yt-dlp download failed: ${error.stderr || (error as Error).message}`);
+    const error = err as Error;
+    if (error.message.includes('not found in PATH')) throw error;
+    throw new Error(`yt-dlp download failed: ${error.message}`);
   }
   const files = await readdir(outputDir);
-  const match = files.find(f => f.startsWith(`${videoId}.`));
+  const match = files.find(
+    f => !f.endsWith('.json') && !f.endsWith('.part') && mediaStem(f) === stem,
+  );
   if (!match) throw new Error('Downloaded file not found after yt-dlp completed');
   return path.join(outputDir, match);
 }
@@ -208,41 +268,31 @@ export async function downloadMp3ToPath(pageUrl: string, outputDir: string, ffmp
     '--no-playlist',
     pageUrl,
   ];
-  console.log(`[mp3] starting — output dir: ${outputDir}, ffmpeg: ${ffmpegPath}`);
-  console.log(`[mp3] yt-dlp command: ${config.ytdlpPath} ${args.join(' ')}`);
   try {
-    const { stdout, stderr } = await execFileAsync(config.ytdlpPath, args, { maxBuffer: 50 * 1024 * 1024 });
-    console.log('[mp3] yt-dlp finished');
-    if (stdout) console.log('[mp3] stdout:', stdout.trim());
-    if (stderr) console.log('[mp3] stderr:', stderr.trim());
+    await execFileAsync(config.ytdlpPath, args, { maxBuffer: DOWNLOAD_MAX_BUFFER });
 
     const files = await readdir(tempDir);
     if (files.length === 0) {
-      console.error('[mp3] yt-dlp produced no files in temp dir');
-      return;
+      throw new Error('yt-dlp completed but produced no MP3 file');
     }
-    console.log(`[mp3] ${files.length} file(s) to move:`, files);
 
     await Promise.all(files.map(async file => {
       const src = path.join(tempDir, file);
       const dst = path.join(outputDir, file);
       try {
         await rename(src, dst);
-        console.log(`[mp3] moved to: ${dst}`);
       } catch (e) {
+        // Cross-device move (temp dir and output on different volumes)
         if ((e as NodeJS.ErrnoException).code === 'EXDEV') {
           await copyFile(src, dst);
           await unlink(src);
-          console.log(`[mp3] copied to: ${dst}`);
         } else {
           throw e;
         }
       }
     }));
-    console.log('[mp3] done');
   } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException & { stderr?: string; stdout?: string };
-    console.error('[mp3] failed:', error.stderr || error.stdout || (error as Error).message);
+    const error = err as NodeJS.ErrnoException & { stderr?: string };
     if (error.code === 'ENOENT') throw new Error('yt-dlp is not installed or not found in PATH');
     throw new Error(`yt-dlp MP3 download failed: ${error.stderr || (error as Error).message}`);
   } finally {

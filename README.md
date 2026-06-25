@@ -23,7 +23,7 @@
 
 ## Getting started
 
-Pick whichever install path matches your setup. All paths land on [http://localhost:3030](http://localhost:3030).
+Pick whichever install path matches your setup. Docker installs and the dev server (`npm run dev`) land on [http://localhost:3030](http://localhost:3030); a local production build (`npm start`) serves on [http://localhost:3031](http://localhost:3031) unless you set `PORT`.
 
 > **Non-Docker installs** need `yt-dlp` and `ffmpeg` on `PATH`. The Docker image bundles both — nothing extra to install.
 
@@ -121,7 +121,7 @@ For a production build: `npm run build && npm start`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `3030` | Port the server listens on |
+| `PORT` | `3031` (the Docker image sets `3030`) | Port the server listens on |
 | `DATA_DIR` | `/app/data` | Directory for the database and downloaded videos |
 | `FFMPEG_PATH` | `/usr/bin/ffmpeg` | Path to ffmpeg binary (pre-installed in Docker) |
 

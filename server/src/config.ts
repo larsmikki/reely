@@ -4,13 +4,13 @@ import ffmpegStatic from 'ffmpeg-static';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const dataDir = process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data');
+const dataDir = path.resolve(process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data'));
 
 export const config = {
-  port: Number(process.env.PORT) || 3031,
-  prodPort: 3030,
+  port: parseInt(process.env.PORT || '3031', 10),
   dataDir,
   videosDir: path.join(dataDir, 'videos'),
+  thumbsDir: path.join(dataDir, 'thumbs'),
   cookiesFile: path.join(dataDir, 'cookies.txt'),
   ytdlpPath: process.env.YTDLP_PATH || 'yt-dlp',
   ffmpegPath: (process.env.FFMPEG_PATH || ffmpegStatic || 'ffmpeg') as string,

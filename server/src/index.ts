@@ -7,6 +7,7 @@ import { startJobWorker, stopJobWorker } from './services/jobs.service.js';
 
 async function main() {
   mkdirSync(config.videosDir, { recursive: true });
+  mkdirSync(config.thumbsDir, { recursive: true });
 
   for (const file of readdirSync(config.videosDir).filter(f => f.endsWith('.part'))) {
     unlinkSync(`${config.videosDir}/${file}`);
@@ -22,10 +23,9 @@ async function main() {
   console.log('Job worker started');
 
   const app = createApp();
-  const port = config.nodeEnv === 'production' ? config.prodPort : config.port;
 
-  app.listen(port, () => {
-    console.log(`Fetchr server running on http://localhost:${port}`);
+  app.listen(config.port, () => {
+    console.log(`Fetchr server running on http://localhost:${config.port}`);
   });
 
   const shutdown = async (signal: string) => {

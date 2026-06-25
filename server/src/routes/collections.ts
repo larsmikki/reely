@@ -1,16 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { collectionsRepo } from '../db/repositories/collections.js';
 import { rewriteSidecarsForCollection } from '../utils/sidecar.js';
+import { parseDesktopId } from '../utils/desktop.js';
 
 const router = Router();
 
-function pickDesktop(value: unknown): 1 | 2 {
-  return value === 2 || value === '2' ? 2 : 1;
-}
-
 // GET /api/collections
 router.get('/', (req: Request, res: Response) => {
-  const desktopId = pickDesktop(req.query.desktop);
+  const desktopId = parseDesktopId(req.query.desktop);
   res.json({
     items: collectionsRepo.list(desktopId),
     totalVideoCount: collectionsRepo.countTotalVideos(desktopId),
@@ -34,7 +31,7 @@ router.post('/', (req: Request, res: Response) => {
     name: name.trim(),
     description: description ?? null,
     color: color ?? '#e11d48',
-    desktopId: pickDesktop(desktop_id),
+    desktopId: parseDesktopId(desktop_id),
   });
   res.status(201).json(collection);
 });

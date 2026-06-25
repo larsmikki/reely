@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ThemeProvider } from '@/contexts/ThemeContext'
+import { ToastProvider } from '@/components/ui'
 import { PlayerProvider } from '@/contexts/PlayerContext'
 import { DesktopProvider, useDesktop } from '@/contexts/DesktopContext'
 import { JobsProvider } from '@/contexts/JobsContext'
@@ -101,11 +102,13 @@ function DesktopedApp() {
 export default function App() {
   return (
     <ThemeProvider>
-      <DesktopProvider>
-        <JobsProvider>
-          <DesktopedApp />
-        </JobsProvider>
-      </DesktopProvider>
+      <ToastProvider>
+        <DesktopProvider>
+          <JobsProvider>
+            <DesktopedApp />
+          </JobsProvider>
+        </DesktopProvider>
+      </ToastProvider>
     </ThemeProvider>
   )
 }

@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useTheme } from '@/contexts/ThemeContext'
-import { thumbnailUrl, cleanupAndRetryVideo, refreshVideoThumbnail, bulkMoveVideos } from '@/api'
+import { thumbnailUrl, cleanupAndRetryVideo, refreshVideoThumbnail, captureVideoThumbnail, bulkMoveVideos } from '@/api'
 import { useActiveVideoJob, useJobs, JOB_KIND_LABEL } from '@/contexts/JobsContext'
 import { usePlayer } from '@/contexts/PlayerContext'
 import { useDesktop } from '@/contexts/DesktopContext'
@@ -98,6 +98,21 @@ const VideoCard = memo(function VideoCard({
       setTimeout(() => setRefreshThumbStatus('idle'), 4000)
     }
   }
+  const [capturing, setCapturing] = useState(false)
+  const [captureBust, setCaptureBust] = useState<number | null>(null)
+  const handleCaptureThumb = async (e: React.MouseEvent) => {
+    e.stopPropagation(); setMenuOpen(false)
+    setCapturing(true)
+    try {
+      await captureVideoThumbnail(video.id)
+      setCaptureBust(Date.now())
+      setImgError(false)
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Failed to capture thumbnail', 'error')
+    } finally {
+      setCapturing(false)
+    }
+  }
   const handleMove = async (e: React.MouseEvent) => {
     e.stopPropagation(); setMenuOpen(false)
     setMoving(true)
@@ -147,7 +162,7 @@ const VideoCard = memo(function VideoCard({
     if (offline.status === 'available') {
       setOfflineRemoveConfirmOpen(true)
     } else if (offline.status === 'absent' || offline.status === 'error') {
-      void downloadVideo(video.id)
+      void downloadVideo(video)
     }
   }
   const offlineLabel =
@@ -247,7 +262,7 @@ const VideoCard = memo(function VideoCard({
           </div>
         ) : !imgError ? (
           <img
-            src={thumbnailUrl(video.id)}
+            src={captureBust ? `${thumbnailUrl(video.id)}?t=${captureBust}` : thumbnailUrl(video.id)}
             alt={video.title || 'Video thumbnail'}
             loading="lazy"
             className="w-full h-full object-cover"
@@ -286,7 +301,7 @@ const VideoCard = memo(function VideoCard({
           >
             <div
               className="w-12 h-12 rounded-full flex items-center justify-center"
-              style={{ background: 'rgba(225,29,72,0.9)' }}
+              style={{ background: 'rgba(220,38,38,0.9)' }}
               title={isActiveMusic ? (showPauseIcon ? 'Pause' : 'Play') : undefined}
               aria-label={isActiveMusic ? (showPauseIcon ? 'Pause' : 'Play') : undefined}
             >
@@ -383,6 +398,11 @@ const VideoCard = memo(function VideoCard({
                   <button onClick={handleOpenOriginal} className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:opacity-80" style={{ color: theme.text }}>Open original page</button>
                   <button onClick={handleCopyLink} className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:opacity-80" style={{ color: theme.text }}>Copy link</button>
                   <button onClick={handleRefreshThumb} className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:opacity-80" style={{ color: theme.text }}>Refresh thumbnail</button>
+                  {imgError && video.local_path && (
+                    <button onClick={handleCaptureThumb} disabled={capturing} className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:opacity-80 disabled:opacity-60" style={{ color: theme.text }}>
+                      {capturing ? 'Capturing…' : 'Add thumbnail from video'}
+                    </button>
+                  )}
                   <button onClick={handleMove} disabled={moving} className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:opacity-80 disabled:opacity-60" style={{ color: theme.text }}>
                     {moving ? 'Moving…' : `Move to ${deskNames[targetDesktop]}`}
                   </button>

@@ -2,9 +2,12 @@ import { Router, Request, Response } from 'express';
 import { pipeline } from 'node:stream';
 import { access, writeFile, unlink } from 'node:fs/promises';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import fetch from 'node-fetch';
 import { videosRepo, type VideoSort } from '../db/repositories/videos.js';
 import { jobsRepo } from '../db/repositories/jobs.js';
+import { settingsRepo } from '../db/repositories/settings.js';
 import { getStreamUrl, extractVideoInfo } from '../services/extractor.service.js';
 import {
   ingestNewVideo,
@@ -20,6 +23,7 @@ import { parseDesktopId } from '../utils/desktop.js';
 import { config } from '../config.js';
 
 const router = Router();
+const execFileAsync = promisify(execFile);
 
 // Cache stream URLs to avoid re-running yt-dlp on every browser range request.
 // The in-flight promise is cached (not just the resolved URL) so concurrent
@@ -246,7 +250,7 @@ router.post('/:id/cleanup-retry', async (req: Request, res: Response) => {
 router.get('/:id/thumbnail', async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const video = videosRepo.findById(id);
-  if (!video || !video.thumbnail_url) {
+  if (!video) {
     res.status(404).json({ error: 'No thumbnail available' });
     return;
   }
@@ -258,6 +262,11 @@ router.get('/:id/thumbnail', async (req: Request, res: Response) => {
     res.sendFile(cachePath);
     return;
   } catch { /* not cached yet */ }
+
+  if (!video.thumbnail_url) {
+    res.status(404).json({ error: 'No thumbnail available' });
+    return;
+  }
 
   const guard = await guardOutboundUrl(video.thumbnail_url);
   if (!guard.ok) {
@@ -327,6 +336,41 @@ router.post('/:id/refresh-thumbnail', (req: Request, res: Response) => {
     kind: 'fetch_thumbnail',
     payload: { url: video.page_url },
   });
+  res.json({ ok: true });
+});
+
+// POST /api/videos/:id/capture-thumbnail — grab a frame from the local video file with ffmpeg
+router.post('/:id/capture-thumbnail', async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const video = videosRepo.findById(id);
+  if (!video) {
+    res.status(404).json({ error: 'Video not found' });
+    return;
+  }
+  if (!video.local_path) {
+    res.status(400).json({ error: 'No local video file to capture a frame from' });
+    return;
+  }
+  try {
+    await access(video.local_path);
+  } catch {
+    res.status(400).json({ error: 'Local video file is missing' });
+    return;
+  }
+
+  const ffmpegPath = settingsRepo.getMany(['ffmpeg_path'])['ffmpeg_path'] || config.ffmpegPath;
+  const cachePath = path.join(config.thumbsDir, `${id}.jpg`);
+  // ponytail: grab the frame at 1s (skips a likely-black opening frame); fall back to 0s for very short clips
+  try {
+    await execFileAsync(ffmpegPath, ['-y', '-ss', '1', '-i', video.local_path, '-frames:v', '1', '-q:v', '3', cachePath]);
+  } catch {
+    try {
+      await execFileAsync(ffmpegPath, ['-y', '-ss', '0', '-i', video.local_path, '-frames:v', '1', '-q:v', '3', cachePath]);
+    } catch (err) {
+      res.status(500).json({ error: `Failed to capture frame: ${(err as Error).message}` });
+      return;
+    }
+  }
   res.json({ ok: true });
 });
 

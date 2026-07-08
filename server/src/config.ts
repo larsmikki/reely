@@ -12,6 +12,13 @@ export const config = {
   videosDir: path.join(dataDir, 'videos'),
   thumbsDir: path.join(dataDir, 'thumbs'),
   cookiesFile: path.join(dataDir, 'cookies.txt'),
+  // Android APK locations, in priority order: the data dir (lets a newer APK
+  // be dropped into a running deployment) then the copy baked into the image
+  // by build-android-client-app.bat + docker build.
+  androidApkFiles: [
+    path.join(dataDir, 'fetchr-client.apk'),
+    path.join(__dirname, '..', '..', 'apk', 'fetchr-client.apk'),
+  ],
   ytdlpPath: process.env.YTDLP_PATH || 'yt-dlp',
   ffmpegPath: (process.env.FFMPEG_PATH || ffmpegStatic || 'ffmpeg') as string,
   nodeEnv: process.env.NODE_ENV || 'development',

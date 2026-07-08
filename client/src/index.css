@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --brand-gradient: linear-gradient(135deg, #ec4899 0%, #be185d 100%);
+  --brand-gradient: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
 }
 
 body {
@@ -30,9 +30,9 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(225, 29, 72, 0.3);
+  background: rgba(220, 38, 38, 0.3);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(225, 29, 72, 0.5);
+  background: rgba(220, 38, 38, 0.5);
 }

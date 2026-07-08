@@ -1,4 +1,5 @@
 import type { Collection, Video, Job, PaginatedResponse, CollectionsResponse } from '@/types'
+import { apiUrl } from '@/platform'
 
 function getDesk2Token(): string | null {
   try { return sessionStorage.getItem('desk2_token') } catch { return null }
@@ -17,7 +18,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = getDesk2Token()
   const extraHeaders: Record<string, string> = {}
   if (token) extraHeaders['X-Desk2-Token'] = token
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     headers: { 'Content-Type': 'application/json', ...extraHeaders, ...options?.headers },
     ...options,
   })
@@ -139,6 +140,10 @@ export function refreshVideoThumbnail(id: number): Promise<{ ok: boolean }> {
   return request(`/api/videos/${id}/refresh-thumbnail`, { method: 'POST' })
 }
 
+export function captureVideoThumbnail(id: number): Promise<{ ok: boolean }> {
+  return request(`/api/videos/${id}/capture-thumbnail`, { method: 'POST' })
+}
+
 export function bulkMoveVideos(ids: number[], desktopId: 1 | 2): Promise<{ moved: number; movedCollections: number; requested: number }> {
   return request('/api/videos/bulk-move', {
     method: 'POST',
@@ -151,20 +156,20 @@ export function redownloadVideo(id: number): Promise<{ ok: boolean }> {
 }
 
 export function thumbnailUrl(id: number): string {
-  return `/api/videos/${id}/thumbnail`
+  return apiUrl(`/api/videos/${id}/thumbnail`)
 }
 
 // Data export / import
 export function exportData(): void {
   const a = document.createElement('a')
-  a.href = '/api/data/export'
+  a.href = apiUrl('/api/data/export')
   a.download = 'fetchr-backup.json'
   a.click()
 }
 
 export function downloadAllVideos(): void {
   const a = document.createElement('a')
-  a.href = '/api/data/videos.zip'
+  a.href = apiUrl('/api/data/videos.zip')
   a.download = 'fetchr-videos.zip'
   a.click()
 }
@@ -235,6 +240,18 @@ export function setDesk2Pin(pin: string): Promise<{ ok: boolean }> {
 }
 export function clearDesk2Pin(currentPin: string): Promise<{ ok: boolean }> {
   return request('/api/settings/desk2-pin', { method: 'DELETE', body: JSON.stringify({ currentPin }) })
+}
+
+// Android app download (APK built by build-android-client-app.bat)
+export function getAndroidAppStatus(): Promise<{ present: boolean; size: number; updatedAt: string | null }> {
+  return request('/api/settings/android-app')
+}
+
+export function downloadAndroidApp(): void {
+  const a = document.createElement('a')
+  a.href = apiUrl('/api/settings/android-app/download')
+  a.download = 'fetchr-client.apk'
+  a.click()
 }
 
 export function getCookieStatus(): Promise<{ present: boolean; size: number; updatedAt: string | null }> {

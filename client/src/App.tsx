@@ -19,12 +19,16 @@ import type { Video } from '@/types'
 
 function AppInner() {
   const queryClient = useQueryClient()
+  const { desktop } = useDesktop()
   const [showAddVideo, setShowAddVideo] = useState(false)
   const [addVideoCollectionId, setAddVideoCollectionId] = useState<number | undefined>()
   const [refreshKey, setRefreshKey] = useState(0)
 
+  // Keyed per desk so a failing refetch after a desk switch can never keep
+  // showing the other desk's collections. Invalidations by the ['collections']
+  // prefix still match.
   const { data: collections = [] } = useQuery({
-    queryKey: queryKeys.collections,
+    queryKey: [...queryKeys.collections, desktop],
     queryFn: async () => (await getCollections()).items,
   })
 

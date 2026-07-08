@@ -10,6 +10,7 @@ import {
 } from '@/offline/videoDownloads'
 import type { Collection } from '@/types'
 import { formatDuration, formatBytes } from '@/utils/format'
+import { apiUrl } from '@/platform'
 
 export default function PersistentPlayer({ collections }: { collections: Collection[] }) {
   const { video, mode, videoRef, minimize, close, consumePendingSeek, next, hasNext } = usePlayer()
@@ -34,7 +35,11 @@ export default function PersistentPlayer({ collections }: { collections: Collect
 
   if (!video || mode === 'closed') return null
 
-  const streamUrl = `/api/videos/${video.id}/stream`
+  // Native app: play the sandbox file directly when a local copy exists.
+  // Web: always the stream URL — the service worker serves it from IndexedDB.
+  const streamUrl = offline.status === 'available' && offline.src
+    ? offline.src
+    : apiUrl(`/api/videos/${video.id}/stream`)
   const collection = collections.find(c => c.id === video.collection_id)
   const isFull = mode === 'full'
   const isMaximized = isFull && userMaximized
@@ -86,14 +91,14 @@ export default function PersistentPlayer({ collections }: { collections: Collect
           >
             <span className="text-white text-sm font-medium truncate pr-4">{video.title || 'Untitled'}</span>
             <div className="flex items-center gap-1 shrink-0">
-              {/* Minimize to mini bar — arrows pointing inward */}
+              {/* Minimize into music mode — note icon matches the music mode toggle */}
               <button
                 onClick={minimize}
-                title="Minimize — keeps playing"
+                title="Minimize — switches to music mode"
                 className="w-7 h-7 flex items-center justify-center rounded-lg text-white/70 hover:text-white transition-colors"
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
+                <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M18 3a1 1 0 0 0-1.196-.98l-10 2A1 1 0 0 0 6 5v9.114A4.369 4.369 0 0 0 5 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0 0 15 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" />
                 </svg>
               </button>
               {/* Maximize (hide panel) / Restore (show panel) */}
@@ -252,7 +257,7 @@ export default function PersistentPlayer({ collections }: { collections: Collect
                     </button>
                   ) : (
                     <button
-                      onClick={() => void downloadVideo(video.id)}
+                      onClick={() => void downloadVideo(video)}
                       className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded font-medium transition-opacity hover:opacity-80"
                       style={{ background: theme.accent, color: '#fff' }}
                       title="Download to this device for offline playback"

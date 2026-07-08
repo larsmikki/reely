@@ -15,5 +15,8 @@
     "jsx": "react-jsx",
     "strict": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // sw.ts runs in a worker context (no DOM lib) and is compiled by
+  // vite-plugin-pwa, not tsc.
+  "exclude": ["src/sw.ts"]
 }

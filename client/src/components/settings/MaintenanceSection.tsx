@@ -2,28 +2,31 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
 import { regenerateSidecars, importSidecars, renameToTitles, refreshThumbnails } from '@/api'
-import { Button, Surface, ConfirmDialog } from '@/components/ui'
+import { Button, ConfirmDialog } from '@/components/ui'
+import SettingsSection from '@/components/settings/SettingsSection'
 import { useAsyncStatus } from '@/hooks/useAsyncStatus'
 
-interface ToolRowProps {
+function ToolCard({
+  glyph, title, description, status, actions,
+}: {
+  glyph: ReactNode
   title: string
   description: ReactNode
   status: string | null
   actions: ReactNode
-  divider?: boolean
-}
-
-function ToolRow({ title, description, status, actions, divider = true }: ToolRowProps) {
+}) {
   const { theme } = useTheme()
   return (
-    <div className={divider ? 'mt-5 pt-5' : ''} style={divider ? { borderTop: `1px solid ${theme.border}` } : undefined}>
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <div className="flex-1 min-w-[16rem]">
-          <h3 className="text-sm font-semibold" style={{ color: theme.text }}>{title}</h3>
-          <p className="text-xs mt-0.5 leading-relaxed" style={{ color: theme.text2 }}>{description}</p>
-        </div>
-        <div className="flex gap-2 shrink-0">{actions}</div>
+    <div
+      className="flex flex-col p-4 rounded-xl"
+      style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}
+    >
+      <div className="flex items-center gap-2">
+        <span style={{ color: theme.text2 }}>{glyph}</span>
+        <h3 className="text-sm font-semibold" style={{ color: theme.text }}>{title}</h3>
       </div>
+      <p className="text-xs mt-1.5 leading-relaxed flex-1" style={{ color: theme.text2 }}>{description}</p>
+      <div className="flex flex-wrap gap-2 mt-3">{actions}</div>
       {status && (
         <p className="text-xs font-medium mt-2" style={{ color: theme.accent }}>{status}</p>
       )}
@@ -78,66 +81,87 @@ export default function MaintenanceSection() {
     })
   }
 
+  const buttonStyle = { background: theme.surface }
+
   return (
-    <Surface className="p-6 mb-5">
-      <h2 className="text-base font-bold mb-1" style={{ color: theme.text }}>Library Maintenance</h2>
-      <p className="text-xs mb-5" style={{ color: theme.text2 }}>
-        Each downloaded video gets a JSON sidecar (title, site, collection, page URL) next to the media file, written and updated automatically. These tools backfill or repair the library — none of them redownload videos.
-      </p>
-
-      <ToolRow
-        divider={false}
-        title="Regenerate sidecars"
-        description="Rewrite the sidecar for every downloaded video from the current library data. Use this to backfill a library from before sidecars existed, or to repair missing ones."
-        status={regenerate.status}
-        actions={
-          <Button variant="secondary" size="sm" onClick={handleRegenerate} disabled={regenerate.loading}>
-            {regenerate.loading ? 'Regenerating...' : 'Regenerate'}
-          </Button>
-        }
-      />
-
-      <ToolRow
-        title="Import from sidecars"
-        description="Restore the library from a backup by scanning the videos folder. Every sidecar with a matching media file is imported, and its thumbnail is re-fetched automatically. Existing entries with the same ID or page URL are replaced by the sidecar."
-        status={sidecarImport.status}
-        actions={
-          <Button variant="secondary" size="sm" onClick={() => setImportConfirmOpen(true)} disabled={sidecarImport.loading}>
-            {sidecarImport.loading ? 'Importing...' : 'Import'}
-          </Button>
-        }
-      />
-
-      <ToolRow
-        title="Rename files to titles"
-        description={
-          <>
-            Rename media files still using the old numeric-ID format (e.g. <code style={{ color: theme.accent }}>43.mp4</code>) to their video title. Sidecars are renamed alongside; files already named by title are skipped.
-          </>
-        }
-        status={rename.status}
-        actions={
-          <Button variant="secondary" size="sm" onClick={() => setRenameConfirmOpen(true)} disabled={rename.loading}>
-            {rename.loading ? 'Renaming...' : 'Rename'}
-          </Button>
-        }
-      />
-
-      <ToolRow
-        title="Refresh thumbnails"
-        description="Re-fetch thumbnails by querying each video's original page URL — either only for videos missing one, or for the whole library."
-        status={thumbs.status}
-        actions={
-          <>
-            <Button variant="secondary" size="sm" onClick={() => handleRefreshThumbnails(false)} disabled={thumbs.loading}>
-              {thumbs.loading ? 'Queuing...' : 'Missing only'}
+    <SettingsSection
+      title="Library maintenance"
+      description="Every download gets a JSON sidecar with its metadata. These tools backfill or repair the library — nothing is redownloaded."
+    >
+      <div className="grid gap-3 sm:grid-cols-2">
+        <ToolCard
+          glyph={
+            <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+              <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+            </svg>
+          }
+          title="Regenerate sidecars"
+          description="Rewrite every sidecar from the current library data. Backfills older libraries and repairs missing files."
+          status={regenerate.status}
+          actions={
+            <Button variant="secondary" size="sm" style={buttonStyle} onClick={handleRegenerate} disabled={regenerate.loading}>
+              {regenerate.loading ? 'Regenerating…' : 'Regenerate'}
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => handleRefreshThumbnails(true)} disabled={thumbs.loading}>
-              All videos
+          }
+        />
+
+        <ToolCard
+          glyph={
+            <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+              <path d="M2 6a2 2 0 012-2h4l2 2h6a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+            </svg>
+          }
+          title="Import from sidecars"
+          description="Rebuild the library by scanning the videos folder. Matching entries are replaced and thumbnails re-fetched."
+          status={sidecarImport.status}
+          actions={
+            <Button variant="secondary" size="sm" style={buttonStyle} onClick={() => setImportConfirmOpen(true)} disabled={sidecarImport.loading}>
+              {sidecarImport.loading ? 'Importing…' : 'Import'}
             </Button>
-          </>
-        }
-      />
+          }
+        />
+
+        <ToolCard
+          glyph={
+            <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+              <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+            </svg>
+          }
+          title="Rename files to titles"
+          description={
+            <>
+              Rename files still using the old numeric format (e.g. <code style={{ color: theme.accent }}>43.mp4</code>) to their video title, sidecars included.
+            </>
+          }
+          status={rename.status}
+          actions={
+            <Button variant="secondary" size="sm" style={buttonStyle} onClick={() => setRenameConfirmOpen(true)} disabled={rename.loading}>
+              {rename.loading ? 'Renaming…' : 'Rename'}
+            </Button>
+          }
+        />
+
+        <ToolCard
+          glyph={
+            <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+              <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
+            </svg>
+          }
+          title="Refresh thumbnails"
+          description="Re-fetch thumbnails from each video's original page — only for videos missing one, or for the whole library."
+          status={thumbs.status}
+          actions={
+            <>
+              <Button variant="secondary" size="sm" style={buttonStyle} onClick={() => handleRefreshThumbnails(false)} disabled={thumbs.loading}>
+                {thumbs.loading ? 'Queuing…' : 'Missing only'}
+              </Button>
+              <Button variant="secondary" size="sm" style={buttonStyle} onClick={() => handleRefreshThumbnails(true)} disabled={thumbs.loading}>
+                All videos
+              </Button>
+            </>
+          }
+        />
+      </div>
 
       <ConfirmDialog
         open={importConfirmOpen}
@@ -156,6 +180,6 @@ export default function MaintenanceSection() {
         onConfirm={handleRename}
         onClose={() => setRenameConfirmOpen(false)}
       />
-    </Surface>
+    </SettingsSection>
   )
 }

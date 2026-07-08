@@ -137,6 +137,11 @@ For a production build: `npm run build && npm start`.
 | Switch desktop | Use the desktop switcher in the header |
 | Backup | **Settings → Export** |
 | Restore | **Settings → Import** |
+| Watch offline | **Save for offline** on a video card or in the player — see [docs/offline.md](docs/offline.md) |
+
+## Offline mode
+
+Fetchr works offline as an installable PWA (requires serving over HTTPS) and as a sideloadable Android app whose Capacitor project lives in `client/android/`. Setup, HTTPS options, and APK build steps are covered in [docs/offline.md](docs/offline.md); the recommended HTTPS route (host or Docker sidecar) is in [docs/tailscale.md](docs/tailscale.md).
 
 ## Data and runtime folders
 

@@ -6,3 +6,6 @@ server/data
 # Runtime data — never bake the local DB or secrets into the image
 data
 **/cookies.txt
+# Native Android project — the built APK ships via apk/, the project itself
+# (gradle caches, build outputs) would only bloat the build context
+client/android

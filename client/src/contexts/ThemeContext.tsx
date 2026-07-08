@@ -27,9 +27,9 @@ export const THEMES: ThemeDefinition[] = [
     border: 'rgba(0,0,0,0.09)',
     text: '#09090b',
     text2: '#71717a',
-    accent: '#db2777',
-    gradient: 'linear-gradient(135deg, #ec4899 0%, #be185d 100%)',
-    previewColors: ['#e8eaed', '#d1d5db', '#db2777'],
+    accent: '#dc2626',
+    gradient: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+    previewColors: ['#e8eaed', '#d1d5db', '#dc2626'],
   },
   {
     name: 'Dark',
@@ -37,12 +37,12 @@ export const THEMES: ThemeDefinition[] = [
     bg: '#0a0a0f',
     surface: '#111118',
     surface2: '#1a1a28',
-    border: 'rgba(219,39,119,0.18)',
+    border: 'rgba(220,38,38,0.18)',
     text: '#f0f0ff',
     text2: '#8884a8',
-    accent: '#db2777',
-    gradient: 'linear-gradient(135deg, #ec4899 0%, #be185d 100%)',
-    previewColors: ['#1a1a28', '#2d1b2e', '#db2777'],
+    accent: '#dc2626',
+    gradient: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+    previewColors: ['#1a1a28', '#2d1b1b', '#dc2626'],
   },
   {
     name: 'Midnight',
@@ -183,6 +183,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     root.style.setProperty('--theme-text', theme.text)
     root.style.setProperty('--theme-text2', theme.text2)
     root.style.setProperty('--theme-accent', theme.accent)
+    root.style.setProperty('--brand-gradient', theme.gradient)
   }, [theme])
 
   const toggle = useCallback(() => {

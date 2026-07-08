@@ -5,6 +5,7 @@ import { usePlayer } from '@/contexts/PlayerContext'
 import { useDesktop } from '@/contexts/DesktopContext'
 import { useJobs, JOB_KIND_LABEL } from '@/contexts/JobsContext'
 import Footer from '@/components/Footer'
+import { thumbnailUrl } from '@/api'
 
 function formatTime(seconds: number): string {
   if (!isFinite(seconds) || seconds < 0) return '0:00'
@@ -82,7 +83,7 @@ function MiniPlayerBar() {
 
       <div className="flex items-center gap-3 px-4" style={{ height: 64 }}>
         <img
-          src={`/api/videos/${video.id}/thumbnail`}
+          src={thumbnailUrl(video.id)}
           alt=""
           className="rounded shrink-0"
           style={{ width: 44, height: 44, objectFit: 'cover' }}

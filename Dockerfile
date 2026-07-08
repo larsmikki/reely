@@ -41,6 +41,10 @@ COPY --from=builder /app/server/dist server/dist
 COPY --from=builder /app/server/src/db/migrations server/dist/db/migrations
 COPY --from=builder /app/client/dist client/dist
 
+# Sideloadable Android APK, if one was built (build-android-client-app.bat).
+# The folder always exists (kept by .gitkeep), so this COPY never fails.
+COPY apk/ apk/
+
 RUN mkdir -p /app/data
 
 ENV NODE_ENV=production

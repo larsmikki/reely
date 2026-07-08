@@ -25,8 +25,7 @@ const ALLOWED_SETTINGS = new Set([
 
 router.get('/', (_req: Request, res: Response) => {
   const all = settingsRepo.getAll();
-  // Expose whether a PIN is set (boolean flag) but never the hash itself
-  all['desk2_pin_set'] = all['desk2_pin_hash'] ? '1' : '';
+  if (all['desk2_pin_hash']) all['desk2_pin_set'] = '1';
   delete all['desk2_pin_hash'];
   res.json(all);
 });
@@ -46,6 +45,42 @@ router.patch('/', (req: Request, res: Response) => {
   }
   settingsRepo.setMany(body as Record<string, string>);
   res.json({ status: 'ok' });
+});
+
+// First existing APK from the configured locations (data dir beats bundled).
+async function findAndroidApk(): Promise<{ path: string; size: number; mtime: Date } | null> {
+  for (const p of config.androidApkFiles) {
+    try {
+      const info = await stat(p);
+      return { path: p, size: info.size, mtime: info.mtime };
+    } catch { /* try next location */ }
+  }
+  return null;
+}
+
+// GET /api/settings/android-app — whether a built APK is available to download
+router.get('/android-app', async (_req: Request, res: Response) => {
+  const apk = await findAndroidApk();
+  if (apk) {
+    res.json({ present: true, size: apk.size, updatedAt: apk.mtime.toISOString() });
+  } else {
+    res.json({ present: false, size: 0, updatedAt: null });
+  }
+});
+
+// GET /api/settings/android-app/download — the sideloadable APK itself,
+// baked into the image by build-android-client-app.bat + docker build.
+router.get('/android-app/download', async (_req: Request, res: Response) => {
+  const apk = await findAndroidApk();
+  if (!apk) {
+    res.status(404).json({ error: 'No APK available — run build-android-client-app.bat first' });
+    return;
+  }
+  res.download(apk.path, 'fetchr-client.apk', err => {
+    if (err && !res.headersSent) {
+      res.status(500).json({ error: 'Failed to send APK' });
+    }
+  });
 });
 
 // GET /api/settings/cookies — whether an uploaded cookies.txt is present

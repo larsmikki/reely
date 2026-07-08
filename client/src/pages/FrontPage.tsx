@@ -5,11 +5,13 @@ import { useTheme } from '@/contexts/ThemeContext'
 import { deleteVideo, reorderCollections } from '@/api'
 import { useInfiniteVideos } from '@/hooks/useInfiniteVideos'
 import VideoCard from '@/components/VideoCard'
+import OfflineLibrary from '@/components/OfflineLibrary'
 import EditVideoModal from '@/components/EditVideoModal'
 import NewCollectionModal from '@/components/NewCollectionModal'
 import LoadMoreSentinel from '@/components/LoadMoreSentinel'
 import { usePlayer } from '@/contexts/PlayerContext'
 import { Button, Input, Select, Pill, Spinner } from '@/components/ui'
+import { isNativeApp } from '@/platform'
 import type { Video, Collection } from '@/types'
 
 interface FrontPageProps {
@@ -33,7 +35,7 @@ export default function FrontPage({ collections, onAddVideo, refreshKey, onColle
   const dragCollectionId = useRef<number | null>(null)
 
   const {
-    videos, total, isLoading: loading,
+    videos, total, isLoading: loading, isError,
     hasNextPage, isFetchingNextPage, fetchNextPage,
   } = useInfiniteVideos({
     q: search || undefined,
@@ -107,6 +109,10 @@ export default function FrontPage({ collections, onAddVideo, refreshKey, onColle
     </Pill>
   )
 
+  // Native app with the server unreachable: fall back to the videos saved on
+  // this device instead of dead search/filter controls and an empty grid.
+  const offlineFallback = isError && isNativeApp
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between gap-4">
@@ -115,24 +121,28 @@ export default function FrontPage({ collections, onAddVideo, refreshKey, onColle
             Your Videos
           </h1>
           <p className="text-sm mt-0.5" style={{ color: theme.text2 }}>
-            {total} video{total !== 1 ? 's' : ''} in your library
+            {offlineFallback ? 'Offline' : `${total} video${total !== 1 ? 's' : ''} in your library`}
           </p>
         </div>
-        <Button
-          variant="primary"
-          size="lg"
-          onClick={onAddVideo}
-          leadingIcon={
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-          }
-        >
-          Add Video
-        </Button>
+        {!offlineFallback && (
+          <Button
+            variant="primary"
+            size="lg"
+            onClick={onAddVideo}
+            leadingIcon={
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+            }
+          >
+            Add Video
+          </Button>
+        )}
       </div>
 
-      <div className="flex flex-col gap-3">
+      {offlineFallback && <OfflineLibrary onPlay={play} />}
+
+      {!offlineFallback && <div className="flex flex-col gap-3">
         <div className="relative">
           <svg
             className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
@@ -210,9 +220,9 @@ export default function FrontPage({ collections, onAddVideo, refreshKey, onColle
             <option value="site">By site</option>
           </Select>
         </div>
-      </div>
+      </div>}
 
-      {loading ? (
+      {offlineFallback ? null : loading ? (
         <Spinner />
       ) : videos.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 gap-4">
@@ -222,12 +232,16 @@ export default function FrontPage({ collections, onAddVideo, refreshKey, onColle
             </svg>
           </div>
           <div className="text-center">
-            <p className="font-semibold" style={{ color: theme.text }}>No videos yet</p>
+            <p className="font-semibold" style={{ color: theme.text }}>
+              {isError ? "Couldn't load videos" : 'No videos yet'}
+            </p>
             <p className="text-sm mt-1" style={{ color: theme.text2 }}>
-              {search || filterCollection !== null ? 'No videos match your filter.' : 'Add your first video to get started.'}
+              {isError
+                ? 'Check that the server is reachable, then try again.'
+                : search || filterCollection !== null ? 'No videos match your filter.' : 'Add your first video to get started.'}
             </p>
           </div>
-          {!search && filterCollection === null && (
+          {!isError && !search && filterCollection === null && (
             <Button variant="primary" onClick={onAddVideo}>Add Video</Button>
           )}
         </div>

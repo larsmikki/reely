@@ -28,6 +28,7 @@ Thumbs.db
 
 # Windows batch files
 *.bat
+!build-android-client-app.bat
 
 # Environment files
 .env
@@ -36,6 +37,10 @@ Thumbs.db
 # Database / runtime data
 data/
 test_album/
+
+# Built Android APK (produced by build-android-client-app.bat; folder kept so
+# the Dockerfile's COPY apk/ always has a build context to copy)
+apk/*.apk
 
 # Uploaded YouTube cookies (live session tokens) — never commit
 **/cookies.txt

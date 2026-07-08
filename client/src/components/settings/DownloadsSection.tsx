@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
 import { getSettings, updateSettings } from '@/api'
-import { Button, Input, Surface } from '@/components/ui'
+import { Button, Input } from '@/components/ui'
+import SettingsSection, { FieldLabel } from '@/components/settings/SettingsSection'
 import FolderPicker from '@/components/FolderPicker'
 import { useAsyncStatus } from '@/hooks/useAsyncStatus'
 
-function PathForm({
-  value, onChange, onBrowse, placeholder, settingKey,
+function PathField({
+  id, label, hint, value, onChange, onBrowse, placeholder, settingKey,
 }: {
+  id: string
+  label: string
+  hint: ReactNode
   value: string
   onChange: (v: string) => void
   onBrowse: () => void
@@ -26,19 +31,24 @@ function PathForm({
   }
 
   return (
-    <form onSubmit={save} className="flex items-center gap-2 flex-wrap">
-      <Input
-        type="text"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="!flex-1 !w-auto min-w-0"
-      />
-      <Button type="button" variant="secondary" onClick={onBrowse}>Browse</Button>
-      <Button type="submit" variant="primary" disabled={loading}>
-        {loading ? 'Saving...' : 'Save'}
-      </Button>
-      {status && <span className="text-sm font-medium" style={{ color: theme.accent }}>{status}</span>}
+    <form onSubmit={save}>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <div className="flex items-center gap-2 flex-wrap">
+        <Input
+          id={id}
+          type="text"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="!flex-1 !w-auto min-w-0"
+        />
+        <Button type="button" variant="secondary" onClick={onBrowse}>Browse</Button>
+        <Button type="submit" variant="primary" disabled={loading}>
+          {loading ? 'Saving…' : 'Save'}
+        </Button>
+        {status && <span className="text-sm font-medium" style={{ color: theme.accent }}>{status}</span>}
+      </div>
+      <p className="text-[11px] mt-1.5" style={{ color: theme.text2 }}>{hint}</p>
     </form>
   )
 }
@@ -57,30 +67,33 @@ export default function DownloadsSection() {
   }, [])
 
   return (
-    <Surface className="p-6 mb-5">
-      <h2 className="text-base font-bold mb-1" style={{ color: theme.text }}>Downloads</h2>
-      <p className="text-xs mb-5" style={{ color: theme.text2 }}>
-        When set, newly added videos are automatically downloaded to this folder using yt-dlp.
-        Supports local paths and network shares (e.g. <code style={{ color: theme.accent }}>\\server\share\videos</code>).
-      </p>
-      <PathForm
+    <SettingsSection
+      title="Downloads"
+      description="New videos are downloaded automatically with yt-dlp once a folder is set."
+    >
+      <PathField
+        id="download-path"
+        label="Download folder"
+        hint={<>Local path or network share, e.g. <code style={{ color: theme.accent }}>\\nas\media\videos</code>.</>}
         value={downloadPath}
         onChange={setDownloadPath}
         onBrowse={() => setBrowse('download')}
-        placeholder="e.g. C:\Videos or \\nas\media\videos"
+        placeholder="e.g. C:\Videos"
         settingKey="download_path"
       />
 
-      <p className="text-xs mt-5 mb-2" style={{ color: theme.text2 }}>
-        ffmpeg path override for MP3 downloads. Leave blank to use the bundled ffmpeg.
-      </p>
-      <PathForm
-        value={ffmpegPath}
-        onChange={setFfmpegPath}
-        onBrowse={() => setBrowse('ffmpeg')}
-        placeholder="e.g. C:\ffmpeg\bin"
-        settingKey="ffmpeg_path"
-      />
+      <div className="mt-5">
+        <PathField
+          id="ffmpeg-path"
+          label="ffmpeg path — optional"
+          hint="Used for MP3 downloads. Leave blank to use the bundled ffmpeg."
+          value={ffmpegPath}
+          onChange={setFfmpegPath}
+          onBrowse={() => setBrowse('ffmpeg')}
+          placeholder="e.g. C:\ffmpeg\bin"
+          settingKey="ffmpeg_path"
+        />
+      </div>
 
       {browse && (
         <FolderPicker
@@ -92,6 +105,6 @@ export default function DownloadsSection() {
           onClose={() => setBrowse(null)}
         />
       )}
-    </Surface>
+    </SettingsSection>
   )
 }

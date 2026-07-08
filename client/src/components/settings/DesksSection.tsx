@@ -3,7 +3,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useTheme } from '@/contexts/ThemeContext'
 import { getSettings, updateSettings, setDesk2Pin, clearDesk2Pin, clearDesk2Token } from '@/api'
 import { queryKeys } from '@/queryKeys'
-import { Button, Input, Surface } from '@/components/ui'
+import { Button, Input } from '@/components/ui'
+import SettingsSection, { FieldLabel, StatusBadge } from '@/components/settings/SettingsSection'
 import { useAsyncStatus } from '@/hooks/useAsyncStatus'
 
 export default function DesksSection() {
@@ -65,39 +66,48 @@ export default function DesksSection() {
   const pinMismatch = newPin && confirmPin && newPin !== confirmPin
 
   return (
-    <Surface className="p-6 mb-5">
-      <h2 className="text-base font-bold mb-1" style={{ color: theme.text }}>Desks</h2>
-      <p className="text-xs mb-5" style={{ color: theme.text2 }}>
-        Desks are two fully separate libraries with their own videos and collections.
-        Name them after how you split things (e.g. "Music" / "Tutorials"). Leave blank for the defaults.
-      </p>
-      <form onSubmit={save} className="flex items-center gap-2 flex-wrap">
-        <Input
-          type="text"
-          value={name1}
-          onChange={e => setName1(e.target.value)}
-          placeholder="Desk 1"
-          maxLength={20}
-          className="!flex-1 !w-auto min-w-0"
-        />
-        <Input
-          type="text"
-          value={name2}
-          onChange={e => setName2(e.target.value)}
-          placeholder="Desk 2"
-          maxLength={20}
-          className="!flex-1 !w-auto min-w-0"
-        />
-        <Button type="submit" variant="primary" disabled={loading}>
-          {loading ? 'Saving...' : 'Save'}
-        </Button>
-        {status && <span className="text-sm font-medium" style={{ color: theme.accent }}>{status}</span>}
+    <SettingsSection
+      title="Desks"
+      description={'Two fully separate libraries, each with its own videos and collections. Name them after how you split things — leave blank for the defaults.'}
+      badge={pinSet ? <StatusBadge color="#16a34a">PIN set</StatusBadge> : undefined}
+    >
+      <form onSubmit={save}>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <FieldLabel htmlFor="desk-1-name">Desk 1 name</FieldLabel>
+            <Input
+              id="desk-1-name"
+              type="text"
+              value={name1}
+              onChange={e => setName1(e.target.value)}
+              placeholder="Desk 1"
+              maxLength={20}
+            />
+          </div>
+          <div>
+            <FieldLabel htmlFor="desk-2-name">Desk 2 name</FieldLabel>
+            <Input
+              id="desk-2-name"
+              type="text"
+              value={name2}
+              onChange={e => setName2(e.target.value)}
+              placeholder="Desk 2"
+              maxLength={20}
+            />
+          </div>
+        </div>
+        <div className="flex items-center gap-2 mt-3">
+          <Button type="submit" variant="primary" disabled={loading}>
+            {loading ? 'Saving…' : 'Save'}
+          </Button>
+          {status && <span className="text-sm font-medium" style={{ color: theme.accent }}>{status}</span>}
+        </div>
       </form>
 
       <div className="mt-6 pt-5" style={{ borderTop: `1px solid ${theme.border}` }}>
         <h3 className="text-sm font-semibold mb-1" style={{ color: theme.text }}>Desk 2 PIN</h3>
         <p className="text-xs mb-4" style={{ color: theme.text2 }}>
-          Require a PIN to switch to Desk 2. Good for keeping separate libraries private on a shared device.
+          Require a PIN to switch to Desk 2 — keeps it private on a shared device.
         </p>
         {pinSet ? (
           removingPin ? (
@@ -143,12 +153,13 @@ export default function DesksSection() {
               onChange={e => setConfirmPin(e.target.value)}
               placeholder="Confirm PIN"
               maxLength={20}
+              invalid={!!pinMismatch}
             />
             {pinMismatch && (
-              <p className="text-xs" style={{ color: '#ef4444' }}>PINs do not match</p>
+              <p className="text-xs" style={{ color: '#dc2626' }}>PINs do not match</p>
             )}
             <div className="flex items-center gap-2">
-              <Button type="submit" variant="primary" size="sm" disabled={pinLoading || !newPin || !!pinMismatch}>
+              <Button type="submit" variant="primary" disabled={pinLoading || !newPin || !!pinMismatch}>
                 {pinLoading ? 'Saving…' : 'Set PIN'}
               </Button>
               {pinStatus && <span className="text-sm font-medium" style={{ color: theme.accent }}>{pinStatus}</span>}
@@ -156,6 +167,6 @@ export default function DesksSection() {
           </form>
         )}
       </div>
-    </Surface>
+    </SettingsSection>
   )
 }

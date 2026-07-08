@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import type { RefObject, ReactNode } from 'react'
 import type { Video } from '@/types'
-import { getVideoById } from '@/api'
+import { getVideoById, thumbnailUrl } from '@/api'
 
 export type PlayerMode = 'full' | 'mini' | 'closed'
 
@@ -94,7 +94,7 @@ export function PlayerProvider({ children, desktop }: { children: ReactNode; des
     if (video.thumbnail_url) {
       artwork.push({ src: video.thumbnail_url, sizes: '512x512', type: 'image/jpeg' })
     } else {
-      artwork.push({ src: `/api/videos/${video.id}/thumbnail`, sizes: '512x512', type: 'image/jpeg' })
+      artwork.push({ src: thumbnailUrl(video.id), sizes: '512x512', type: 'image/jpeg' })
     }
     navigator.mediaSession.metadata = new MediaMetadata({
       title: video.title ?? 'Untitled',
@@ -183,7 +183,15 @@ export function PlayerProvider({ children, desktop }: { children: ReactNode; des
     return () => document.removeEventListener('visibilitychange', handler)
   }, [videoRef])
 
-  const minimize = useCallback(() => setMode('mini'), [])
+  const minimize = useCallback(() => {
+    setMode('mini')
+    // Minimizing is how a user opts into music mode from a normal video.
+    setMusicMode(prev => {
+      if (prev) return prev
+      try { localStorage.setItem(MUSIC_MODE_KEY, '1') } catch {}
+      return true
+    })
+  }, [])
   const expand = useCallback(() => setMode('full'), [])
 
   const close = useCallback(() => {

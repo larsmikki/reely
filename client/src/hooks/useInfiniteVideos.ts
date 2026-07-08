@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { getVideos } from '@/api'
 import { queryKeys } from '@/queryKeys'
+import { useDesktop } from '@/contexts/DesktopContext'
 
 export const VIDEOS_PAGE_SIZE = 48
 
@@ -13,8 +14,11 @@ export function useInfiniteVideos(params: {
   sort?: string
   refreshKey: number
 }) {
+  // The desktop must be part of the key: with a shared key, a failing refetch
+  // after a desk switch would keep showing the previous desk's videos.
+  const { desktop } = useDesktop()
   const query = useInfiniteQuery({
-    queryKey: queryKeys.videos({ ...params, infinite: true }),
+    queryKey: queryKeys.videos({ ...params, desktop, infinite: true }),
     queryFn: ({ pageParam }) => getVideos({
       page: pageParam,
       limit: VIDEOS_PAGE_SIZE,

@@ -9,10 +9,14 @@ const config: CapacitorConfig = {
     // shell before running `npx cap sync`. Leave undefined in production so
     // the bundled `dist/` is loaded from the app sandbox.
     url: process.env.CAPACITOR_SERVER_URL,
-    cleartext: false,
-  },
-  android: {
-    allowMixedContent: false,
+    // The webview must NOT run on https://localhost: a self-hosted server is
+    // often plain http:// on the LAN, and an https page loading http media is
+    // mixed content — allowMixedContent lets fetch() through, but the WebView
+    // still refuses <img>/<video> loads, so thumbnails and streaming break.
+    // With an http origin nothing is mixed content (http://localhost is still
+    // a secure context, so clipboard etc. keep working).
+    androidScheme: 'http',
+    cleartext: true,
   },
 }
 

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
 import { getSettings, updateSettings, getCookieStatus, uploadCookies, deleteCookies } from '@/api'
-import { Button, Input, Surface, ConfirmDialog, useToast } from '@/components/ui'
+import { Button, Input, ConfirmDialog, useToast } from '@/components/ui'
+import SettingsSection, { Disclosure, FieldLabel, StatusBadge } from '@/components/settings/SettingsSection'
 import { useAsyncStatus } from '@/hooks/useAsyncStatus'
 import { formatAge } from '@/utils/formatAge'
 
@@ -73,13 +74,11 @@ export default function YouTubeAuthSection() {
   }
 
   return (
-    <Surface className="p-6 mb-5">
-      <h2 className="text-base font-bold mb-1" style={{ color: theme.text }}>YouTube authentication</h2>
-      <p className="text-xs mb-4" style={{ color: theme.text2 }}>
-        Some videos need a logged-in session — age-restricted ones, or those that fail with
-        “Sign in to confirm…”. Choose how to provide YouTube cookies.
-      </p>
-
+    <SettingsSection
+      title="YouTube authentication"
+      description="Age-restricted videos need a signed-in session. Choose how to provide cookies."
+      badge={cookiePresent ? <StatusBadge color="#16a34a">Cookies active</StatusBadge> : undefined}
+    >
       <div className="grid gap-3 sm:grid-cols-2 mb-4">
         {([
           {
@@ -138,68 +137,73 @@ export default function YouTubeAuthSection() {
 
       {cookieMode === 'file' ? (
         <div>
-          <ol className="text-xs space-y-1.5 mb-4 list-decimal pl-4" style={{ color: theme.text2 }}>
-            <li>
-              Install the{' '}
-              <a
-                href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline"
-                style={{ color: theme.accent }}
-              >Get cookies.txt LOCALLY</a>{' '}
-              extension (Chrome/Edge; the Firefox build is linked from its{' '}
-              <a
-                href="https://github.com/kairi003/Get-cookies.txt-LOCALLY"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline"
-                style={{ color: theme.accent }}
-              >GitHub page</a>).
-            </li>
-            <li>Sign in to YouTube, open <code style={{ color: theme.accent }}>youtube.com</code>, and use the extension to export cookies in <strong>Netscape</strong> format.</li>
-            <li>Upload that file below — it’s stored on the server and reused for every download (ideal for Docker, where there’s no browser to read).</li>
-          </ol>
-          <p className="text-[11px] mb-4" style={{ color: theme.text2 }}>
-            Tip: export from a private/incognito window and close it right afterward — YouTube rotates cookies, so continuing to browse in that session can invalidate the file.
-          </p>
           <div className="flex flex-wrap items-center gap-2">
             <input ref={cookieRef} type="file" accept=".txt,text/plain" className="hidden" onChange={handleCookieUpload} />
             <Button variant="primary" onClick={() => cookieRef.current?.click()} disabled={upload.loading}>
-              {upload.loading ? 'Working...' : cookiePresent ? 'Replace cookies.txt' : 'Upload cookies.txt'}
+              {upload.loading ? 'Working…' : cookiePresent ? 'Replace cookies.txt' : 'Upload cookies.txt'}
             </Button>
             {cookiePresent && (
               <Button variant="secondary" onClick={() => setRemoveConfirmOpen(true)}>Remove</Button>
             )}
-            {cookiePresent && (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: theme.text2 }}>
-                <span className="w-2 h-2 rounded-full" style={{ background: '#22c55e' }} />
-                Cookie file in use{cookieUpdatedAt ? ` · updated ${formatAge(cookieUpdatedAt)}` : ''}
+            {cookiePresent && cookieUpdatedAt && (
+              <span className="text-xs" style={{ color: theme.text2 }}>
+                updated {formatAge(cookieUpdatedAt)}
               </span>
             )}
           </div>
+
+          <div className="mt-4">
+            <Disclosure label="How to export cookies.txt">
+              <ol className="text-xs space-y-1.5 list-decimal pl-4" style={{ color: theme.text2 }}>
+                <li>
+                  Install the{' '}
+                  <a
+                    href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline"
+                    style={{ color: theme.accent }}
+                  >Get cookies.txt LOCALLY</a>{' '}
+                  extension (Chrome/Edge; the Firefox build is linked from its{' '}
+                  <a
+                    href="https://github.com/kairi003/Get-cookies.txt-LOCALLY"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline"
+                    style={{ color: theme.accent }}
+                  >GitHub page</a>).
+                </li>
+                <li>Sign in to YouTube in a private/incognito window, open <code style={{ color: theme.accent }}>youtube.com</code>, and export cookies in <strong>Netscape</strong> format.</li>
+                <li>Close the private window right away — YouTube rotates cookies, and browsing on in that session can invalidate the file.</li>
+                <li>Upload the file here. It's stored on the server and reused for every download.</li>
+              </ol>
+            </Disclosure>
+          </div>
+
           <p className="text-[11px] mt-3" style={{ color: theme.text2 }}>
-            Cookies expire after a while — if downloads start failing again, re-export and upload a fresh file.
+            Cookies expire after a while — if downloads start failing again, upload a fresh file.
           </p>
         </div>
       ) : (
-        <form onSubmit={saveCookieBrowser} className="flex flex-col gap-2">
-          <p className="text-xs" style={{ color: theme.text2 }}>
-            Reads cookies straight from a browser profile on the <strong>server</strong>. This won’t work in Docker (no browser installed) and can fail while that browser is running.
-          </p>
+        <form onSubmit={saveCookieBrowser}>
+          <FieldLabel htmlFor="cookie-browser">Browser on the server</FieldLabel>
           <div className="flex items-center gap-2 flex-wrap">
             <Input
+              id="cookie-browser"
               type="text"
               value={cookieBrowser}
               onChange={e => setCookieBrowser(e.target.value)}
-              placeholder="chrome, firefox, edge, brave, opera, vivaldi, chromium, safari (e.g. firefox:Default)"
+              placeholder="e.g. firefox or firefox:Default"
               className="!flex-1 !w-auto min-w-0"
             />
             <Button type="submit" variant="primary" disabled={browserSave.loading}>
-              {browserSave.loading ? 'Saving...' : 'Save'}
+              {browserSave.loading ? 'Saving…' : 'Save'}
             </Button>
             {browserSave.status && <span className="text-sm font-medium" style={{ color: theme.accent }}>{browserSave.status}</span>}
           </div>
+          <p className="text-[11px] mt-1.5" style={{ color: theme.text2 }}>
+            chrome, firefox, edge, brave, opera, vivaldi, chromium, or safari. Reads the profile on the <strong>server</strong> — won't work in Docker, and can fail while that browser is running.
+          </p>
         </form>
       )}
 
@@ -216,6 +220,6 @@ export default function YouTubeAuthSection() {
         onConfirm={handleRemoveCookies}
         onClose={() => setRemoveConfirmOpen(false)}
       />
-    </Surface>
+    </SettingsSection>
   )
 }

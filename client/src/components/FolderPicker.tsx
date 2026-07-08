@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTheme } from '@/contexts/ThemeContext'
+import { apiUrl } from '@/platform'
 
 interface BrowseEntry { name: string; path: string }
 interface BrowseResult {
@@ -23,7 +24,7 @@ export default function FolderPicker({ onSelect, onClose }: Props) {
     queryKey: ['folder-picker', path],
     queryFn: async () => {
       const url = path ? `/api/browse?path=${encodeURIComponent(path)}` : '/api/browse'
-      const res = await fetch(url)
+      const res = await fetch(apiUrl(url))
       const data = await res.json() as BrowseResult & { error?: string }
       if (!res.ok) throw new Error(data.error ?? 'Failed to load')
       return data

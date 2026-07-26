@@ -212,6 +212,10 @@ router.post('/:id/refresh', async (req: Request, res: Response) => {
       duration: info.duration,
       thumbnailUrl: info.thumbnail_url,
       site: info.site,
+      sourceId: info.source_id,
+      channelId: info.channel_id,
+      channelName: info.channel_name,
+      publishedAt: info.published_at,
       fetchStatus: 'ok',
       fetchError: null,
     });

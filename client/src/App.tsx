@@ -13,6 +13,7 @@ import FrontPage from '@/pages/FrontPage'
 import CollectionPage from '@/pages/CollectionPage'
 import SettingsPage from '@/pages/SettingsPage'
 import DonatePage from '@/pages/DonatePage'
+import DiscoveryPage from '@/pages/DiscoveryPage'
 import { getCollections } from '@/api'
 import { queryKeys } from '@/queryKeys'
 import type { Video } from '@/types'
@@ -75,6 +76,7 @@ function AppInner() {
             }
           />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/discover" element={<DiscoveryPage />} />
           <Route path="/donate" element={<DonatePage />} />
         </Route>
       </Routes>

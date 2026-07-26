@@ -25,7 +25,7 @@ async function main() {
   const app = createApp();
 
   app.listen(config.port, () => {
-    console.log(`Fetchr server running on http://localhost:${config.port}`);
+    console.log(`Play server running on http://localhost:${config.port}`);
   });
 
   const shutdown = async (signal: string) => {

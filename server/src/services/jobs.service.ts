@@ -54,6 +54,10 @@ async function runExtractMetadata(job: Job): Promise<void> {
     duration: info.duration,
     thumbnailUrl: info.thumbnail_url,
     site: info.site,
+    sourceId: info.source_id,
+    channelId: info.channel_id,
+    channelName: info.channel_name,
+    publishedAt: info.published_at,
     fetchStatus: 'ok',
     fetchError: null,
   });
@@ -173,6 +177,10 @@ async function runFetchThumbnail(job: Job): Promise<void> {
     description: existing?.description ?? info.description,
     duration: existing?.duration ?? info.duration,
     site: existing?.site ?? info.site,
+    sourceId: existing?.source_id ?? info.source_id,
+    channelId: existing?.channel_id ?? info.channel_id,
+    channelName: existing?.channel_name ?? info.channel_name,
+    publishedAt: existing?.published_at ?? info.published_at,
   });
   await unlink(path.join(config.thumbsDir, `${videoId}.jpg`)).catch(() => {});
   await writeSidecarForVideo(videoId);

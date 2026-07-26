@@ -9,3 +9,7 @@ data
 # Native Android project — the built APK ships via apk/, the project itself
 # (gradle caches, build outputs) would only bloat the build context
 client/android
+# Only the current branded APK belongs in release images; ignored local staging
+# can contain older generated builds.
+apk/*-client.apk
+!apk/play-client.apk

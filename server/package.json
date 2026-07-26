@@ -1,5 +1,5 @@
 {
-  "name": "fetchr-server",
+  "name": "play-server",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -8,6 +8,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc && node -e \"require('fs').mkdirSync('dist/db/migrations',{recursive:true}); require('fs').readdirSync('src/db/migrations').forEach(f=>require('fs').copyFileSync('src/db/migrations/'+f,'dist/db/migrations/'+f));\"",
     "start": "node dist/index.js",
+    "dlna:probe": "node scripts/dlna-probe.mjs",
     "test": "vitest run",
     "lint": "eslint ."
   },

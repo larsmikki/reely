@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "app.fetchr.client"
+    namespace = "app.play.client"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "app.fetchr.client"
+        applicationId "app.play.client"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -22,11 +22,11 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
-    // Name the APK fetchr-client.apk instead of the default app-debug.apk /
+    // Name the APK play-client.apk instead of the default app-debug.apk /
     // app-release.apk (debug and release land in separate output folders).
     applicationVariants.all { variant ->
         variant.outputs.all {
-            outputFileName = "fetchr-client.apk"
+            outputFileName = "play-client.apk"
         }
     }
 }

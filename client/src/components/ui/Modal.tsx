@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
 
@@ -19,12 +20,15 @@ export function Modal({ title, onClose, children, maxWidth = 480 }: Props) {
     return () => window.removeEventListener('keydown', handler)
   }, [onClose])
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.6)' }}
-      onMouseDown={e => { mouseDownOnBackdrop.current = e.target === e.currentTarget }}
-      onClick={e => { if (mouseDownOnBackdrop.current && e.target === e.currentTarget) onClose() }}
+      onMouseDown={e => { e.stopPropagation(); mouseDownOnBackdrop.current = e.target === e.currentTarget }}
+      onClick={e => {
+        e.stopPropagation()
+        if (mouseDownOnBackdrop.current && e.target === e.currentTarget) onClose()
+      }}
     >
       <div
         className="w-full rounded-2xl shadow-2xl"
@@ -46,6 +50,7 @@ export function Modal({ title, onClose, children, maxWidth = 480 }: Props) {
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

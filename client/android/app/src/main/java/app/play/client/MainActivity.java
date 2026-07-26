@@ -1,4 +1,4 @@
-package app.fetchr.client;
+package app.play.client;
 
 import com.getcapacitor.BridgeActivity;
 

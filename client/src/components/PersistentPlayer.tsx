@@ -11,6 +11,7 @@ import {
 import type { Collection } from '@/types'
 import { formatDuration, formatBytes } from '@/utils/format'
 import { apiUrl } from '@/platform'
+import CastPanel from '@/components/CastPanel'
 
 export default function PersistentPlayer({ collections }: { collections: Collection[] }) {
   const { video, mode, videoRef, minimize, close, consumePendingSeek, next, hasNext } = usePlayer()
@@ -18,6 +19,7 @@ export default function PersistentPlayer({ collections }: { collections: Collect
   const [userMaximized, setUserMaximized] = useState(true)
   const [redownloading, setRedownloading] = useState(false)
   const [offlineRemoveConfirmOpen, setOfflineRemoveConfirmOpen] = useState(false)
+  const [castPanelOpen, setCastPanelOpen] = useState(false)
   const offline = useOfflineState(video?.id ?? -1)
 
   useEffect(() => {
@@ -27,11 +29,11 @@ export default function PersistentPlayer({ collections }: { collections: Collect
   // Escape minimizes (keeps audio playing) instead of closing — unless a
   // dialog is open, in which case Escape belongs to the dialog.
   useEffect(() => {
-    if (mode !== 'full' || offlineRemoveConfirmOpen) return
+    if (mode !== 'full' || offlineRemoveConfirmOpen || castPanelOpen) return
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') minimize() }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [mode, minimize, offlineRemoveConfirmOpen])
+  }, [mode, minimize, offlineRemoveConfirmOpen, castPanelOpen])
 
   if (!video || mode === 'closed') return null
 
@@ -91,6 +93,16 @@ export default function PersistentPlayer({ collections }: { collections: Collect
           >
             <span className="text-white text-sm font-medium truncate pr-4">{video.title || 'Untitled'}</span>
             <div className="flex items-center gap-1 shrink-0">
+              <button
+                onClick={() => setCastPanelOpen(true)}
+                title="Cast to DLNA TV"
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-white/70 hover:text-white transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 6.75A2.75 2.75 0 0 1 5.75 4h12.5A2.75 2.75 0 0 1 21 6.75v8.5A2.75 2.75 0 0 1 18.25 18H13" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 14.5A6.5 6.5 0 0 1 9.5 21M3 18.5A2.5 2.5 0 0 1 5.5 21M3 21h.01" />
+                </svg>
+              </button>
               {/* Minimize into music mode — note icon matches the music mode toggle */}
               <button
                 onClick={minimize}
@@ -133,6 +145,35 @@ export default function PersistentPlayer({ collections }: { collections: Collect
         )}
 
       </div>
+
+      {isFull && castPanelOpen && (
+        <div
+          className="fixed inset-0 flex items-start justify-end p-3 sm:p-5"
+          style={{ zIndex: 60, background: 'rgba(0,0,0,0.35)' }}
+          onClick={() => setCastPanelOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-lg shadow-2xl p-4"
+            style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h2 className="text-sm font-semibold" style={{ color: theme.text }}>Cast to DLNA TV</h2>
+              <button
+                onClick={() => setCastPanelOpen(false)}
+                title="Close cast controls"
+                className="w-7 h-7 flex items-center justify-center rounded-lg transition-opacity hover:opacity-80"
+                style={{ color: theme.text2, background: theme.surface2, border: `1px solid ${theme.border}` }}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <CastPanel video={video} />
+          </div>
+        </div>
+      )}
 
       {/* Details sidebar — full mode only, hidden when maximized */}
       {isFull && !isMaximized && (
@@ -274,6 +315,8 @@ export default function PersistentPlayer({ collections }: { collections: Collect
                 )}
               </div>
             </div>
+
+            <CastPanel video={video} />
 
             {video.notes && (
               <div>

@@ -1,8 +1,8 @@
 # Offline mode
 
-Fetchr supports offline playback two ways:
+Play supports offline playback two ways:
 
-1. **PWA (any phone/browser)** — install Fetchr to your home screen; downloaded videos are stored in the browser (IndexedDB) and served by a service worker.
+1. **PWA (any phone/browser)** — install Play to your home screen; downloaded videos are stored in the browser (IndexedDB) and served by a service worker.
 2. **Android app (Capacitor)** — the app shell ships inside the APK and videos are stored as real files in the app sandbox, so there are no browser storage quotas and the OS never evicts them.
 
 Both share the same UI: the "Save for offline" button on a video card or in the player.
@@ -21,14 +21,14 @@ Service workers only run in a secure context. `http://localhost` counts, but a L
 
 ### Option 1: Tailscale (easiest, works away from home)
 
-Your server becomes `https://<machine>.<tailnet>.ts.net` with a valid certificate on every device in your tailnet — no port forwarding, no certificate management. Full setup guide, including running Tailscale as a Docker sidecar next to Fetchr: **[tailscale.md](tailscale.md)**.
+Your server becomes `https://<machine>.<tailnet>.ts.net` with a valid certificate on every device in your tailnet — no port forwarding, no certificate management. Full setup guide, including running Tailscale as a Docker sidecar next to Play: **[tailscale.md](tailscale.md)**.
 
 ### Option 2: Caddy reverse proxy
 
 For a LAN-only setup with your own DNS name:
 
 ```
-fetchr.example.com {
+play.example.com {
     reverse_proxy localhost:3030
 }
 ```
@@ -37,7 +37,7 @@ Caddy obtains and renews certificates automatically (requires a real domain; for
 
 ### Then, on the phone
 
-1. Open the HTTPS URL, add Fetchr to the home screen (Share → "Add to Home Screen" on iOS, install prompt on Android).
+1. Open the HTTPS URL, add Play to the home screen (Share → "Add to Home Screen" on iOS, install prompt on Android).
 2. Open the app once so the shell is cached, then save videos for offline.
 
 On iOS, installing to the home screen matters beyond convenience: Safari evicts storage for ordinary tabs after ~7 days of non-use, but home-screen web apps are exempt. Storage is still subject to iOS quotas — for multi-gigabyte libraries prefer the Android app.
@@ -52,9 +52,9 @@ On Windows, one command runs the whole chain (web build → Capacitor sync → G
 build-android-client-app.bat
 ```
 
-It drops the finished `fetchr-client.apk` into `apk/`, which the Docker build bakes into the image — so the full release flow is just: run this script, then build/deploy the image as usual. The server offers the APK under **Settings → Android App**: open Fetchr in the phone's browser, download it from there, tap it, and allow the install when asked. No cable, no store.
+It drops the finished `play-client.apk` into `apk/`, which the Docker build bakes into the image — so the full release flow is just: run this script, then build/deploy the image as usual. The server offers the APK under **Settings → Android App**: open Play in the phone's browser, download it from there, tap it, and allow the install when asked. No cable, no store.
 
-(To update the APK on a running deployment without rebuilding the image, drop a newer file into the data volume — `docker cp apk/fetchr-client.apk fetchr:/app/data/` — the data dir copy takes priority over the bundled one.)
+(To update the APK on a running deployment without rebuilding the image, drop a newer file into the data volume — `docker cp apk/play-client.apk play:/app/data/` — the data dir copy takes priority over the bundled one.)
 
 The manual equivalent:
 
@@ -64,7 +64,7 @@ npm run build          # build the web bundle
 npx @capacitor/assets generate --android   # launcher icons + splash from client/assets/
 npx cap sync android   # copy it into the Android project
 cd android
-./gradlew assembleDebug   # APK at app/build/outputs/apk/debug/fetchr-client.apk
+./gradlew assembleDebug   # APK at app/build/outputs/apk/debug/play-client.apk
 ``` On first launch, open **Settings → Server** in the app and enter your server address (e.g. `http://192.168.1.10:3030` or your Tailscale HTTPS URL). Plain HTTP works in the native app — the HTTPS requirement only applies to the PWA.
 
 Videos saved for offline in the Android app are written to the app's private files directory via the Filesystem plugin, together with the video's metadata and thumbnail so the offline library can render without a server. There is no quota beyond free disk space and Android never evicts them. (Videos saved by builds that predate stored metadata are backfilled automatically the next time the app starts with the server reachable.)

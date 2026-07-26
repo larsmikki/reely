@@ -25,7 +25,7 @@ export default function AndroidAppSection() {
   return (
     <SettingsSection
       title="Android app"
-      description="Fetchr as a native app with real offline storage — no browser limits."
+      description="Play as a native app with real offline storage — no browser limits."
     >
       <ol className="space-y-2 mb-4">
         {INSTALL_STEPS.map((step, i) => (

@@ -10,7 +10,7 @@ import EditVideoModal from '@/components/EditVideoModal'
 import NewCollectionModal from '@/components/NewCollectionModal'
 import LoadMoreSentinel from '@/components/LoadMoreSentinel'
 import { usePlayer } from '@/contexts/PlayerContext'
-import { Button, Input, Select, Pill, Spinner } from '@/components/ui'
+import { Button, Input, Select, Pill, Spinner, ConfirmDialog } from '@/components/ui'
 import { isNativeApp } from '@/platform'
 import type { Video, Collection } from '@/types'
 
@@ -31,6 +31,7 @@ export default function FrontPage({ collections, onAddVideo, refreshKey, onColle
   const [sort, setSort] = useState('newest')
   const { play } = usePlayer()
   const [editingVideo, setEditingVideo] = useState<Video | null>(null)
+  const [deletingVideo, setDeletingVideo] = useState<Video | null>(null)
   const [showNewCollection, setShowNewCollection] = useState(false)
   const dragCollectionId = useRef<number | null>(null)
 
@@ -73,6 +74,8 @@ export default function FrontPage({ collections, onAddVideo, refreshKey, onColle
     await deleteVideo(video.id)
     invalidateVideos()
   }, [invalidateVideos])
+
+  const handleRequestDelete = useCallback((video: Video) => setDeletingVideo(video), [])
 
   const handleEditVideo = useCallback((video: Video) => setEditingVideo(video), [])
 
@@ -254,7 +257,7 @@ export default function FrontPage({ collections, onAddVideo, refreshKey, onColle
               videos={groupVideos}
               collectionMap={collectionMap}
               onPlay={play}
-              onDelete={handleDelete}
+              onDelete={handleRequestDelete}
               onEdit={handleEditVideo}
               onMoved={handleVideoMoved}
             />
@@ -268,7 +271,7 @@ export default function FrontPage({ collections, onAddVideo, refreshKey, onColle
               video={video}
               collectionMap={collectionMap}
               onClick={handlePlay}
-              onDelete={handleDelete}
+              onDelete={handleRequestDelete}
               onEdit={handleEditVideo}
               showCollection={true}
               onMoved={handleVideoMoved}
@@ -300,6 +303,18 @@ export default function FrontPage({ collections, onAddVideo, refreshKey, onColle
           onCreated={() => onCollectionsChange()}
         />
       )}
+
+      <ConfirmDialog
+        open={deletingVideo !== null}
+        title="Delete video"
+        message="Delete this video? The downloaded file is removed along with it."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => {
+          if (deletingVideo) void handleDelete(deletingVideo)
+        }}
+        onClose={() => setDeletingVideo(null)}
+      />
     </div>
   )
 }

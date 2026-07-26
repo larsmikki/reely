@@ -1,11 +1,11 @@
 {
-  "name": "Fetchr",
-  "short_name": "Fetchr",
+  "name": "Play",
+  "short_name": "Play",
   "description": "Video collection manager — self-hosted, private, free",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0a0f",
-  "theme_color": "#c8102e",
+  "theme_color": "#dc2626",
   "icons": [
     { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
   ]

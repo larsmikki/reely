@@ -8,6 +8,9 @@ export type {
   Job,
   PaginatedResponse,
   CollectionsResponse,
+  DiscoveryStatus,
+  DiscoverySuggestion,
+  DiscoveryRefreshResponse,
 } from './api.js';
 
 export interface ExtractedInfo {
@@ -16,4 +19,8 @@ export interface ExtractedInfo {
   duration: number | null;
   thumbnail_url: string | null;
   stream_url: string | null;
+  source_id: string | null;
+  channel_id: string | null;
+  channel_name: string | null;
+  published_at: string | null;
 }

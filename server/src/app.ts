@@ -10,7 +10,9 @@ import settingsRouter from './routes/settings.js';
 import dataRouter from './routes/data.js';
 import browseRouter from './routes/browse.js';
 import jobsRouter from './routes/jobs.js';
+import castRouter from './routes/cast.js';
 import authRouter, { makeDesk2Token } from './routes/auth.js';
+import discoveryRouter from './routes/discovery.js';
 import { settingsRepo } from './db/repositories/settings.js';
 
 // Gate GET requests for desktop=2 behind the PIN token when one is configured.
@@ -46,10 +48,12 @@ export function createApp() {
   app.use('/api/auth', authRouter);
   app.use('/api/collections', desk2Guard, collectionsRouter);
   app.use('/api/videos', desk2Guard, videosRouter);
+  app.use('/api/discovery', desk2Guard, discoveryRouter);
   app.use('/api/settings', settingsRouter);
   app.use('/api/data', dataRouter);
   app.use('/api/browse', browseRouter);
   app.use('/api/jobs', jobsRouter);
+  app.use('/api/cast', castRouter);
 
   // Serve client build in production
   if (config.nodeEnv === 'production') {

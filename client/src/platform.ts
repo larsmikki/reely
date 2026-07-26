@@ -1,6 +1,6 @@
 import { Capacitor } from '@capacitor/core'
 
-// In the browser the client is served by the Fetchr server itself, so API
+// In the browser the client is served by the Play server itself, so API
 // paths are same-origin and need no prefix. In the native (Capacitor) app the
 // bundle is loaded from the app sandbox, so every API call must be prefixed
 // with the user-configured server URL.

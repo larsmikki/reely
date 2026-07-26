@@ -35,6 +35,7 @@ export default function CollectionPage({
 
   const { play } = usePlayer()
   const [editingVideo, setEditingVideo] = useState<Video | null>(null)
+  const [deletingVideo, setDeletingVideo] = useState<Video | null>(null)
 
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -60,6 +61,8 @@ export default function CollectionPage({
     invalidateVideos()
     onCollectionsChange()
   }, [invalidateVideos, onCollectionsChange])
+
+  const handleRequestDelete = useCallback((video: Video) => setDeletingVideo(video), [])
 
   const handleEditVideo = useCallback((video: Video) => setEditingVideo(video), [])
 
@@ -200,7 +203,7 @@ export default function CollectionPage({
               video={video}
               collectionMap={collectionMap}
               onClick={handlePlay}
-              onDelete={handleDelete}
+              onDelete={handleRequestDelete}
               onEdit={handleEditVideo}
               showCollection={isUncategorized}
             />
@@ -226,6 +229,18 @@ export default function CollectionPage({
           onClose={() => setConfirmDeleteOpen(false)}
         />
       )}
+
+      <ConfirmDialog
+        open={deletingVideo !== null}
+        title="Delete video"
+        message="Delete this video? The downloaded file is removed along with it."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => {
+          if (deletingVideo) void handleDelete(deletingVideo)
+        }}
+        onClose={() => setDeletingVideo(null)}
+      />
 
       {editingVideo && (
         <EditVideoModal

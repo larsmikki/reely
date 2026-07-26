@@ -98,7 +98,7 @@ export function PlayerProvider({ children, desktop }: { children: ReactNode; des
     }
     navigator.mediaSession.metadata = new MediaMetadata({
       title: video.title ?? 'Untitled',
-      artist: video.site ?? 'Fetchr',
+      artist: video.site ?? 'Play',
       artwork,
     })
   }, [video])

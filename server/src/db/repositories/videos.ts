@@ -44,6 +44,10 @@ export interface VideoPatch {
   fetchStatus?: FetchStatus;
   fetchError?: string | null;
   resetMetadata?: boolean;
+  sourceId?: string | null;
+  channelId?: string | null;
+  channelName?: string | null;
+  publishedAt?: string | null;
 }
 
 const COL_MAP: Record<keyof Omit<VideoPatch, 'resetMetadata'>, string> = {
@@ -58,6 +62,10 @@ const COL_MAP: Record<keyof Omit<VideoPatch, 'resetMetadata'>, string> = {
   localPath: 'local_path',
   fetchStatus: 'fetch_status',
   fetchError: 'fetch_error',
+  sourceId: 'source_id',
+  channelId: 'channel_id',
+  channelName: 'channel_name',
+  publishedAt: 'published_at',
 };
 
 export const videosRepo = {
@@ -152,6 +160,10 @@ export const videosRepo = {
         'thumbnail_url = NULL',
         'site = NULL',
         'local_path = NULL',
+        'source_id = NULL',
+        'channel_id = NULL',
+        'channel_name = NULL',
+        'published_at = NULL',
       );
     }
 
@@ -220,6 +232,39 @@ export const videosRepo = {
          WHERE page_url IS NOT NULL AND page_url != '' AND (thumbnail_url IS NULL OR thumbnail_url = '')`
       : `SELECT id, page_url FROM videos WHERE page_url IS NOT NULL AND page_url != ''`;
     return allRows(getDb().exec(sql));
+  },
+
+  listMissingCreatorMetadata(desktopId: DesktopId, limit = 25): Array<{ id: number; page_url: string }> {
+    return allRows(
+      getDb().exec(
+        `SELECT id, page_url FROM videos
+         WHERE desktop_id = $d
+           AND (site = 'youtube' OR site = 'youtu' OR page_url LIKE '%youtube.com/%' OR page_url LIKE '%youtu.be/%')
+           AND (channel_id IS NULL OR channel_id = '')
+         ORDER BY added_at DESC LIMIT $lim`,
+        { $d: desktopId, $lim: limit },
+      ),
+    );
+  },
+
+  listCreatorSources(desktopId: DesktopId): Array<{
+    source_id: string | null;
+    channel_id: string;
+    channel_name: string | null;
+    published_at: string | null;
+    collection_id: number | null;
+    collection_name: string | null;
+  }> {
+    return allRows(
+      getDb().exec(
+        `SELECT v.source_id, v.channel_id, v.channel_name, v.published_at,
+                v.collection_id, c.name AS collection_name
+         FROM videos v
+         LEFT JOIN collections c ON c.id = v.collection_id
+         WHERE v.desktop_id = $d AND v.channel_id IS NOT NULL AND v.channel_id != ''`,
+        { $d: desktopId },
+      ),
+    );
   },
 
   // All videos with their collection name, for the JSON backup export.

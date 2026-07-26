@@ -16,11 +16,12 @@ export const config = {
   // be dropped into a running deployment) then the copy baked into the image
   // by build-android-client-app.bat + docker build.
   androidApkFiles: [
-    path.join(dataDir, 'fetchr-client.apk'),
-    path.join(__dirname, '..', '..', 'apk', 'fetchr-client.apk'),
+    path.join(dataDir, 'play-client.apk'),
+    path.join(__dirname, '..', '..', 'apk', 'play-client.apk'),
   ],
   ytdlpPath: process.env.YTDLP_PATH || 'yt-dlp',
   ffmpegPath: (process.env.FFMPEG_PATH || ffmpegStatic || 'ffmpeg') as string,
+  castPublicBaseUrl: process.env.CAST_PUBLIC_BASE_URL || '',
   nodeEnv: process.env.NODE_ENV || 'development',
   clientDistDir: path.join(__dirname, '..', '..', 'client', 'dist'),
 };

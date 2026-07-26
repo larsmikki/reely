@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Fetchr</string>
-    <string name="title_activity_main">Fetchr</string>
-    <string name="package_name">app.fetchr.client</string>
-    <string name="custom_url_scheme">app.fetchr.client</string>
+    <string name="app_name">Play</string>
+    <string name="title_activity_main">Play</string>
+    <string name="package_name">app.play.client</string>
+    <string name="custom_url_scheme">app.play.client</string>
 </resources>

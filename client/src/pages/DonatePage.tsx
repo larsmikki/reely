@@ -8,10 +8,10 @@ export default function DonatePage() {
     <div className="flex flex-col gap-5 max-w-2xl mx-auto">
       <div>
         <h1 className="text-2xl font-extrabold tracking-tight" style={{ color: theme.text }}>
-          Support Fetchr
+          Support Play
         </h1>
         <p className="text-sm mt-0.5" style={{ color: theme.text2 }}>
-          Fetchr is free, open-source, and self-hosted. If you find it useful, consider supporting its development.
+          Play is free, open-source, and self-hosted. If you find it useful, consider supporting its development.
         </p>
       </div>
 
@@ -34,7 +34,7 @@ export default function DonatePage() {
               Support the Developer
             </h2>
             <p className="text-xs" style={{ color: theme.text2 }}>
-              Every contribution helps keep Fetchr maintained and growing.
+              Every contribution helps keep Play maintained and growing.
             </p>
           </div>
         </div>
@@ -78,14 +78,14 @@ export default function DonatePage() {
 
       <Surface className="p-6">
         <h2 className="text-base font-bold mb-1" style={{ color: theme.text }}>
-          Why support Fetchr?
+          Why support Play?
         </h2>
         <p className="text-xs mb-5" style={{ color: theme.text2 }}>
           A few reasons your contribution matters.
         </p>
         <ul className="flex flex-col gap-2.5">
           {[
-            'Fetchr is 100% free and self-hosted — no subscriptions, no tracking.',
+            'Play is 100% free and self-hosted — no subscriptions, no tracking.',
             'Your data stays on your own server.',
             'Donations fund new features and ongoing maintenance.',
             'Contributions directly support an indie developer.',
@@ -108,7 +108,7 @@ export default function DonatePage() {
       </Surface>
 
       <p className="text-sm text-center" style={{ color: theme.text2 }}>
-        Thank you for using Fetchr. Your support means the world.
+        Thank you for using Play. Your support means the world.
       </p>
     </div>
   )

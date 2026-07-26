@@ -1,12 +1,12 @@
-# Serving Fetchr over HTTPS with Tailscale
+# Serving Play over HTTPS with Tailscale
 
-Fetchr's offline mode (see [offline.md](offline.md)) needs the server reachable over HTTPS — browsers refuse to register a service worker on a plain-HTTP LAN address. Tailscale is the easiest way to get there for a self-hosted setup: every device in your tailnet can reach the server by a stable DNS name with a valid certificate, at home or away, with no port forwarding and no certificate management.
+Play's offline mode (see [offline.md](offline.md)) needs the server reachable over HTTPS — browsers refuse to register a service worker on a plain-HTTP LAN address. Tailscale is the easiest way to get there for a self-hosted setup: every device in your tailnet can reach the server by a stable DNS name with a valid certificate, at home or away, with no port forwarding and no certificate management.
 
 Two ways to set it up. **Option 1 (Tailscale on the Docker host)** is simpler to operate if the host can run Tailscale. **Option 2 (sidecar container)** keeps everything inside Docker Compose and needs nothing installed on the host.
 
 ## Prerequisites (both options)
 
-1. A Tailscale account (free for personal use) with the Tailscale app installed on the phone/devices that will use Fetchr.
+1. A Tailscale account (free for personal use) with the Tailscale app installed on the phone/devices that will use Play.
 2. In the [admin console](https://login.tailscale.com/admin/dns) under **DNS**:
    - **MagicDNS** enabled.
    - **HTTPS Certificates** enabled.
@@ -15,7 +15,7 @@ Without both, `tailscale serve` cannot issue a certificate and will say so.
 
 ## Option 1 — Tailscale on the Docker host
 
-Works because the default `docker-compose.yml` publishes Fetchr's port to the host (`3030:3030`), so the host's Tailscale daemon can proxy to it.
+Works because the default `docker-compose.yml` publishes Play's port to the host (`3030:3030`), so the host's Tailscale daemon can proxy to it.
 
 1. Install Tailscale on the host (NAS/server) and log in:
 
@@ -25,7 +25,7 @@ Works because the default `docker-compose.yml` publishes Fetchr's port to the ho
 
    Many NAS platforms (Synology, QNAP, Unraid, TrueNAS) have a Tailscale package — use that where available.
 
-2. Start serving Fetchr:
+2. Start serving Play:
 
    ```sh
    tailscale serve --bg 3030
@@ -41,11 +41,11 @@ Works because the default `docker-compose.yml` publishes Fetchr's port to the ho
 
    You should see something like `https://<hostname>.<tailnet>.ts.net/ proxy http://127.0.0.1:3030`.
 
-Fetchr is now at `https://<hostname>.<tailnet>.ts.net` from every device in your tailnet. To stop serving: `tailscale serve --https=443 off`.
+Play is now at `https://<hostname>.<tailnet>.ts.net` from every device in your tailnet. To stop serving: `tailscale serve --https=443 off`.
 
 ## Option 2 — Tailscale sidecar container
 
-The sidecar joins your tailnet as its own machine (named `fetchr`), and the Fetchr container shares its network namespace. Nothing is installed on the host and the whole deployment stays in Compose.
+The sidecar joins your tailnet as its own machine (named `play`), and the Play container shares its network namespace. Nothing is installed on the host and the whole deployment stays in Compose.
 
 ### 1. Create an auth key
 
@@ -57,7 +57,7 @@ Admin console → **Settings → Keys → Generate auth key**. A plain single-us
 services:
   tailscale:
     image: tailscale/tailscale:latest
-    hostname: fetchr                      # machine name on the tailnet
+    hostname: play                                  # machine name on the tailnet
     environment:
       - TS_AUTHKEY=tskey-auth-XXXXX       # the key from step 1
       - TS_STATE_DIR=/var/lib/tailscale
@@ -69,25 +69,25 @@ services:
       - "3030:3030"                       # optional: keeps plain-HTTP LAN access working
     restart: unless-stopped
 
-  fetchr:
-    image: larsmikki/fetchr:latest
-    container_name: fetchr
+  play:
+    image: larsmikki/play:latest
+    container_name: play
     network_mode: service:tailscale       # replaces the ports: mapping
     volumes:
-      - fetchr-data:/app/data
+      - play-data:/app/data
       # - /path/to/your/output:/output   # mount a host folder for downloads
     restart: unless-stopped
     depends_on:
       - tailscale
 
 volumes:
-  fetchr-data:
+  play-data:
   tailscale-state:
 ```
 
 Notes:
 
-- `network_mode: service:tailscale` means the Fetchr container has no network of its own — `ports:` must live on the `tailscale` service, and a container-internal healthcheck still works.
+- `network_mode: service:tailscale` means the Play container has no network of its own — `ports:` must live on the `tailscale` service, and a container-internal healthcheck still works.
 - The sidecar runs in userspace networking mode by default, which is all `serve` needs — no `NET_ADMIN` capability or `/dev/net/tun` required.
 - Prefer not to keep the auth key in the file? Put `TS_AUTHKEY` in an `.env` file next to the compose file (already gitignored) and reference it as `- TS_AUTHKEY=${TS_AUTHKEY}`.
 
@@ -113,11 +113,11 @@ docker compose up -d
 docker compose exec tailscale tailscale serve status
 ```
 
-Fetchr is now at `https://fetchr.<your-tailnet>.ts.net`.
+Play is now at `https://play.<your-tailnet>.ts.net`.
 
 ## Using it from the phone
 
-- **PWA:** open the HTTPS URL, add Fetchr to the home screen, open it once online — from then on the app shell and anything saved for offline work without a connection. Details in [offline.md](offline.md).
+- **PWA:** open the HTTPS URL, add Play to the home screen, open it once online — from then on the app shell and anything saved for offline work without a connection. Details in [offline.md](offline.md).
 - **Android app:** enter the HTTPS URL under **Settings → Server**.
 
 ## Troubleshooting

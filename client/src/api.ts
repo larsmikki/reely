@@ -1,4 +1,4 @@
-import type { Collection, Video, Job, PaginatedResponse, CollectionsResponse } from '@/types'
+import type { Collection, Video, Job, PaginatedResponse, CollectionsResponse, CastDevicesResponse, DiscoverySuggestion, DiscoveryRefreshResponse } from '@/types'
 import { apiUrl } from '@/platform'
 
 function getDesk2Token(): string | null {
@@ -159,18 +159,76 @@ export function thumbnailUrl(id: number): string {
   return apiUrl(`/api/videos/${id}/thumbnail`)
 }
 
+// Discovery
+export function getDiscoverySuggestions(): Promise<{ items: DiscoverySuggestion[] }> {
+  return request(`/api/discovery?desktop=${_desktop}`)
+}
+
+export function refreshDiscovery(): Promise<DiscoveryRefreshResponse> {
+  return request('/api/discovery/refresh', {
+    method: 'POST',
+    body: JSON.stringify({ desktop_id: _desktop }),
+  })
+}
+
+export function addDiscoverySuggestion(id: number): Promise<Video> {
+  return request(`/api/discovery/${id}/add`, { method: 'POST' })
+}
+
+export function dismissDiscoverySuggestion(id: number): Promise<{ ok: boolean }> {
+  return request(`/api/discovery/${id}/dismiss`, { method: 'POST' })
+}
+
+// Cast / DLNA
+export function getCastDevices(refresh = true): Promise<CastDevicesResponse> {
+  return request(`/api/cast/devices?refresh=${refresh ? '1' : '0'}`)
+}
+
+export function castVideo(deviceId: string, videoId: number): Promise<{ ok: boolean; stream_url: string }> {
+  return request(`/api/cast/devices/${encodeURIComponent(deviceId)}/play`, {
+    method: 'POST',
+    body: JSON.stringify({ video_id: videoId }),
+  })
+}
+
+export function pauseCast(deviceId: string): Promise<{ ok: boolean }> {
+  return request(`/api/cast/devices/${encodeURIComponent(deviceId)}/pause`, { method: 'POST' })
+}
+
+export function resumeCast(deviceId: string): Promise<{ ok: boolean }> {
+  return request(`/api/cast/devices/${encodeURIComponent(deviceId)}/resume`, { method: 'POST' })
+}
+
+export function stopCast(deviceId: string): Promise<{ ok: boolean }> {
+  return request(`/api/cast/devices/${encodeURIComponent(deviceId)}/stop`, { method: 'POST' })
+}
+
+export function seekCast(deviceId: string, seconds: number): Promise<{ ok: boolean }> {
+  return request(`/api/cast/devices/${encodeURIComponent(deviceId)}/seek`, {
+    method: 'POST',
+    body: JSON.stringify({ seconds }),
+  })
+}
+
+export function setCastVolume(deviceId: string, volume: number): Promise<{ ok: boolean }> {
+  return request(`/api/cast/devices/${encodeURIComponent(deviceId)}/volume`, {
+    method: 'POST',
+    body: JSON.stringify({ volume }),
+  })
+}
+
 // Data export / import
 export function exportData(): void {
   const a = document.createElement('a')
   a.href = apiUrl('/api/data/export')
-  a.download = 'fetchr-backup.json'
+  a.download = 'play-backup.json'
   a.click()
 }
 
 export function downloadAllVideos(): void {
   const a = document.createElement('a')
   a.href = apiUrl('/api/data/videos.zip')
-  a.download = 'fetchr-videos.zip'
+  a.download = 'play-videos.zip'
   a.click()
 }
 
@@ -250,7 +308,7 @@ export function getAndroidAppStatus(): Promise<{ present: boolean; size: number;
 export function downloadAndroidApp(): void {
   const a = document.createElement('a')
   a.href = apiUrl('/api/settings/android-app/download')
-  a.download = 'fetchr-client.apk'
+  a.download = 'play-client.apk'
   a.click()
 }
 

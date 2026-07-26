@@ -68,7 +68,7 @@ export default function AppDataSection() {
             </svg>
           }
           title="Export library"
-          description="Save everything to fetchr-backup.json."
+          description="Save everything to play-backup.json."
           onClick={exportData}
         />
         <ActionCard

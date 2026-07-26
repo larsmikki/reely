@@ -5,7 +5,8 @@ import { thumbnailUrl, cleanupAndRetryVideo, refreshVideoThumbnail, captureVideo
 import { useActiveVideoJob, useJobs, JOB_KIND_LABEL } from '@/contexts/JobsContext'
 import { usePlayer } from '@/contexts/PlayerContext'
 import { useDesktop } from '@/contexts/DesktopContext'
-import { ConfirmDialog, useToast } from '@/components/ui'
+import { ConfirmDialog, Modal, useToast } from '@/components/ui'
+import CastPanel from '@/components/CastPanel'
 import {
   downloadVideo,
   removeOfflineVideo,
@@ -22,6 +23,76 @@ interface VideoCardProps {
   collectionMap: Map<number, Collection>
   showCollection?: boolean
   onMoved?: () => void
+}
+
+type MenuIconName = 'edit' | 'external' | 'copy' | 'refresh' | 'camera' | 'move' | 'download' | 'cast' | 'trash'
+
+function MenuIcon({ name }: { name: MenuIconName }) {
+  const shared = 'w-4 h-4 shrink-0'
+  switch (name) {
+    case 'edit':
+      return (
+        <svg className={shared} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 7.125L16.875 4.5" />
+        </svg>
+      )
+    case 'external':
+      return (
+        <svg className={shared} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H18m0 0v4.5M18 6l-7.5 7.5" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 8.25v9A1.75 1.75 0 007.75 19h8.5A1.75 1.75 0 0018 17.25v-3" />
+        </svg>
+      )
+    case 'copy':
+      return (
+        <svg className={shared} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8 8h9.25A1.75 1.75 0 0119 9.75V19a1.75 1.75 0 01-1.75 1.75H8A1.75 1.75 0 016.25 19V9.75A1.75 1.75 0 018 8z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 16H4.75A1.75 1.75 0 013 14.25V5a1.75 1.75 0 011.75-1.75H14A1.75 1.75 0 0115.75 5v.25" />
+        </svg>
+      )
+    case 'refresh':
+      return (
+        <svg className={shared} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M20 11a8.1 8.1 0 00-15.5-2M4 5v4h4" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 13a8.1 8.1 0 0015.5 2M20 19v-4h-4" />
+        </svg>
+      )
+    case 'camera':
+      return (
+        <svg className={shared} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 8.25A2.25 2.25 0 016.75 6h1.5l1.2-1.6A1 1 0 0110.25 4h3.5a1 1 0 01.8.4L15.75 6h1.5a2.25 2.25 0 012.25 2.25v8.5A2.25 2.25 0 0117.25 19H6.75a2.25 2.25 0 01-2.25-2.25v-8.5z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.25a3 3 0 106 0 3 3 0 00-6 0z" />
+        </svg>
+      )
+    case 'move':
+      return (
+        <svg className={shared} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h10m0 0l-3-3m3 3l-3 3" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M16 17H6m0 0l3 3m-3-3l3-3" />
+        </svg>
+      )
+    case 'download':
+      return (
+        <svg className={shared} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v10m0 0l-3.5-3.5M12 14l3.5-3.5" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 18.5h14" />
+        </svg>
+      )
+    case 'cast':
+      return (
+        <svg className={shared} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 6.75A2.75 2.75 0 0 1 5.75 4h12.5A2.75 2.75 0 0 1 21 6.75v8.5A2.75 2.75 0 0 1 18.25 18H13" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 14.5A6.5 6.5 0 0 1 9.5 21M3 18.5A2.5 2.5 0 0 1 5.5 21M3 21h.01" />
+        </svg>
+      )
+    case 'trash':
+      return (
+        <svg className={shared} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12m-9 0V5.75A1.75 1.75 0 0110.75 4h2.5A1.75 1.75 0 0115 5.75V7m-7.5 0l.75 12A2 2 0 0010.25 21h3.5a2 2 0 002-2L16.5 7" />
+        </svg>
+      )
+  }
 }
 
 const VideoCard = memo(function VideoCard({
@@ -43,6 +114,7 @@ const VideoCard = memo(function VideoCard({
   const [imgError, setImgError] = useState(false)
   const [retrying, setRetrying] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [castModalOpen, setCastModalOpen] = useState(false)
   const activeJob = useActiveVideoJob(video.id)
   const { musicMode, video: playingVideo, videoRef } = usePlayer()
 
@@ -76,13 +148,12 @@ const VideoCard = memo(function VideoCard({
     ).length
   }, [allJobs, activeJob])
 
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [offlineRemoveConfirmOpen, setOfflineRemoveConfirmOpen] = useState(false)
 
   const handleMenuClick = (e: React.MouseEvent) => { e.stopPropagation(); setMenuOpen(p => !p) }
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation(); setMenuOpen(false)
-    setDeleteConfirmOpen(true)
+    onDelete(video)
   }
   const handleEdit = (e: React.MouseEvent) => { e.stopPropagation(); setMenuOpen(false); onEdit(video) }
   const [refreshThumbStatus, setRefreshThumbStatus] = useState<'idle' | 'queued' | 'error'>('idle')
@@ -146,6 +217,11 @@ const VideoCard = memo(function VideoCard({
       addToast('Could not copy the link', 'error')
     }
   }
+  const handleCast = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setMenuOpen(false)
+    setCastModalOpen(true)
+  }
   const handleCopyError = async (e: React.MouseEvent) => {
     e.stopPropagation()
     if (!video.fetch_error) return
@@ -170,6 +246,10 @@ const VideoCard = memo(function VideoCard({
     : offline.status === 'downloading' ? `Downloading… ${Math.round(offline.progress * 100)}%`
     : offline.status === 'error' ? 'Retry offline download'
     : 'Save for offline'
+
+  const offlineIcon: MenuIconName = offline.status === 'available' ? 'trash' : 'download'
+  const menuItemClass = 'flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors hover:opacity-80 disabled:opacity-60'
+  const menuLabelClass = 'min-w-0 flex-1 truncate whitespace-nowrap'
 
   const handleOverlayClick = (e: React.MouseEvent) => {
     if (!isActiveMusic) return
@@ -393,28 +473,73 @@ const VideoCard = memo(function VideoCard({
             {menuOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={e => { e.stopPropagation(); setMenuOpen(false) }} />
-                <div className="absolute right-0 top-7 z-20 py-1 rounded-lg shadow-lg min-w-32" style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-                  <button onClick={handleEdit} className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:opacity-80" style={{ color: theme.text }}>Edit</button>
-                  <button onClick={handleOpenOriginal} className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:opacity-80" style={{ color: theme.text }}>Open original page</button>
-                  <button onClick={handleCopyLink} className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:opacity-80" style={{ color: theme.text }}>Copy link</button>
-                  <button onClick={handleRefreshThumb} className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:opacity-80" style={{ color: theme.text }}>Refresh thumbnail</button>
+                <div
+                  role="menu"
+                  aria-label="Video actions"
+                  className="absolute right-0 top-7 z-20 w-56 max-w-[calc(100vw-2rem)] py-1 rounded-lg shadow-lg"
+                  style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+                >
+                  <button onClick={handleEdit} className={menuItemClass} style={{ color: theme.text }} role="menuitem">
+                    <span style={{ color: theme.text2 }}><MenuIcon name="edit" /></span>
+                    <span className={menuLabelClass}>Edit details</span>
+                  </button>
+
+                  <div className="my-1 h-px" style={{ background: theme.border }} />
+
+                  <button onClick={handleOpenOriginal} className={menuItemClass} style={{ color: theme.text }} role="menuitem">
+                    <span style={{ color: theme.text2 }}><MenuIcon name="external" /></span>
+                    <span className={menuLabelClass}>Open original</span>
+                  </button>
+                  <button onClick={handleCopyLink} className={menuItemClass} style={{ color: theme.text }} role="menuitem">
+                    <span style={{ color: theme.text2 }}><MenuIcon name="copy" /></span>
+                    <span className={menuLabelClass}>Copy link</span>
+                  </button>
+
+                  <div className="my-1 h-px" style={{ background: theme.border }} />
+
+                  <button onClick={handleRefreshThumb} className={menuItemClass} style={{ color: theme.text }} role="menuitem">
+                    <span style={{ color: theme.text2 }}><MenuIcon name="refresh" /></span>
+                    <span className={menuLabelClass}>Refresh thumbnail</span>
+                  </button>
                   {imgError && video.local_path && (
-                    <button onClick={handleCaptureThumb} disabled={capturing} className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:opacity-80 disabled:opacity-60" style={{ color: theme.text }}>
-                      {capturing ? 'Capturing…' : 'Add thumbnail from video'}
+                    <button onClick={handleCaptureThumb} disabled={capturing} className={menuItemClass} style={{ color: theme.text }} role="menuitem">
+                      <span style={{ color: theme.text2 }}><MenuIcon name="camera" /></span>
+                      <span className={menuLabelClass}>{capturing ? 'Capturing...' : 'Capture thumbnail'}</span>
                     </button>
                   )}
-                  <button onClick={handleMove} disabled={moving} className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:opacity-80 disabled:opacity-60" style={{ color: theme.text }}>
-                    {moving ? 'Moving…' : `Move to ${deskNames[targetDesktop]}`}
+                  <div className="my-1 h-px" style={{ background: theme.border }} />
+
+                  <button onClick={handleMove} disabled={moving} className={menuItemClass} style={{ color: theme.text }} role="menuitem">
+                    <span style={{ color: theme.text2 }}><MenuIcon name="move" /></span>
+                    <span className={menuLabelClass}>{moving ? 'Moving...' : `Move to ${deskNames[targetDesktop]}`}</span>
                   </button>
                   <button
                     onClick={handleOfflineToggle}
                     disabled={offline.status === 'downloading'}
-                    className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:opacity-80 disabled:opacity-60"
+                    className={menuItemClass}
                     style={{ color: theme.text }}
+                    role="menuitem"
                   >
-                    {offlineLabel}
+                    <span style={{ color: theme.text2 }}><MenuIcon name={offlineIcon} /></span>
+                    <span className={menuLabelClass}>{offlineLabel}</span>
                   </button>
-                  <button onClick={handleDelete} className="w-full text-left px-3 py-1.5 text-sm transition-colors" style={{ color: '#e11d48' }}>Delete</button>
+                  <button
+                    onClick={handleCast}
+                    disabled={video.fetch_status !== 'ok' || isPending}
+                    className={menuItemClass}
+                    style={{ color: theme.text }}
+                    role="menuitem"
+                  >
+                    <span style={{ color: theme.text2 }}><MenuIcon name="cast" /></span>
+                    <span className={menuLabelClass}>Cast to DLNA TV</span>
+                  </button>
+
+                  <div className="my-1 h-px" style={{ background: theme.border }} />
+
+                  <button onClick={handleDelete} className={menuItemClass} style={{ color: '#e11d48' }} role="menuitem">
+                    <MenuIcon name="trash" />
+                    <span className={menuLabelClass}>Delete</span>
+                  </button>
                 </div>
               </>
             )}
@@ -422,29 +547,22 @@ const VideoCard = memo(function VideoCard({
         </div>
       </div>
 
-      {/* Dialogs live inside the clickable card, so stop propagation to keep
-          backdrop/button clicks from also opening the video. */}
-      {(deleteConfirmOpen || offlineRemoveConfirmOpen) && (
-        <div onClick={e => e.stopPropagation()}>
-          <ConfirmDialog
-            open={deleteConfirmOpen}
-            title="Delete video"
-            message="Delete this video? The downloaded file is removed along with it."
-            confirmLabel="Delete"
-            destructive
-            onConfirm={() => onDelete(video)}
-            onClose={() => setDeleteConfirmOpen(false)}
-          />
-          <ConfirmDialog
-            open={offlineRemoveConfirmOpen}
-            title="Remove offline copy"
-            message="Remove this video from offline storage?"
-            confirmLabel="Remove"
-            destructive
-            onConfirm={() => void removeOfflineVideo(video.id)}
-            onClose={() => setOfflineRemoveConfirmOpen(false)}
-          />
-        </div>
+      <ConfirmDialog
+        open={offlineRemoveConfirmOpen}
+        title="Remove offline copy"
+        message="Remove this video from offline storage?"
+        confirmLabel="Remove"
+        destructive
+        onConfirm={() => void removeOfflineVideo(video.id)}
+        onClose={() => setOfflineRemoveConfirmOpen(false)}
+      />
+
+      {castModalOpen && (
+        <Modal title="Cast to DLNA TV" onClose={() => setCastModalOpen(false)} maxWidth={384}>
+          <div className="p-4">
+            <CastPanel video={video} />
+          </div>
+        </Modal>
       )}
     </div>
   )

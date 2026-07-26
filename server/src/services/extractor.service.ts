@@ -42,6 +42,7 @@ interface YtDlpFormat {
 }
 
 interface YtDlpOutput {
+  id?: string;
   title?: string;
   description?: string;
   duration?: number;
@@ -51,6 +52,38 @@ interface YtDlpOutput {
   url?: string;
   ext?: string;
   protocol?: string;
+  channel_id?: string;
+  channel?: string;
+  uploader?: string;
+  timestamp?: number;
+  release_timestamp?: number;
+  upload_date?: string;
+  webpage_url?: string;
+  entries?: YtDlpOutput[];
+}
+
+export interface ChannelUpload {
+  source_id: string;
+  page_url: string;
+  title: string;
+  description: string | null;
+  duration: number | null;
+  thumbnail_url: string | null;
+  channel_id: string;
+  channel_name: string;
+  published_at: string | null;
+}
+
+function normalizePublishedAt(output: YtDlpOutput): string | null {
+  const timestamp = output.release_timestamp ?? output.timestamp;
+  if (typeof timestamp === 'number' && Number.isFinite(timestamp)) {
+    return new Date(timestamp * 1000).toISOString();
+  }
+  const date = output.upload_date;
+  if (date && /^\d{8}$/.test(date)) {
+    return `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}T00:00:00.000Z`;
+  }
+  return null;
 }
 
 function extractSite(pageUrl: string): string | null {
@@ -141,7 +174,51 @@ export async function extractVideoInfo(pageUrl: string): Promise<ExtractedInfo &
     thumbnail_url: pickBestThumbnail(parsed),
     stream_url: pickBestStreamUrl(parsed),
     site: extractSite(pageUrl),
+    source_id: parsed.id ?? null,
+    channel_id: parsed.channel_id ?? null,
+    channel_name: parsed.channel ?? parsed.uploader ?? null,
+    published_at: normalizePublishedAt(parsed),
   };
+}
+
+export async function listRecentChannelUploads(channelId: string, limit = 12): Promise<ChannelUpload[]> {
+  let stdout: string;
+  try {
+    const result = await execFileAsync(
+      config.ytdlpPath,
+      [
+        ...cookieArgs(),
+        '--flat-playlist',
+        '--dump-single-json',
+        '--no-warnings',
+        '--playlist-end', String(limit),
+        `https://www.youtube.com/channel/${channelId}/videos`,
+      ],
+      { maxBuffer: DUMP_JSON_MAX_BUFFER, timeout: 60_000 },
+    );
+    stdout = result.stdout;
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException & { stderr?: string };
+    if (error.code === 'ENOENT') throw new Error('yt-dlp is not installed or not found in PATH');
+    throw new Error(`Could not scan channel ${channelId}: ${error.stderr || error.message}`);
+  }
+
+  const parsed = JSON.parse(stdout) as YtDlpOutput;
+  const fallbackName = parsed.channel ?? parsed.uploader ?? channelId;
+  return (parsed.entries ?? []).flatMap(entry => {
+    if (!entry.id || !entry.title) return [];
+    return [{
+      source_id: entry.id,
+      page_url: entry.webpage_url ?? `https://www.youtube.com/watch?v=${entry.id}`,
+      title: entry.title,
+      description: entry.description?.slice(0, 500) ?? null,
+      duration: typeof entry.duration === 'number' ? Math.round(entry.duration) : null,
+      thumbnail_url: pickBestThumbnail(entry),
+      channel_id: entry.channel_id ?? channelId,
+      channel_name: entry.channel ?? entry.uploader ?? fallbackName,
+      published_at: normalizePublishedAt(entry),
+    }];
+  });
 }
 
 export async function getStreamUrl(pageUrl: string): Promise<string> {
@@ -153,7 +230,7 @@ export async function getStreamUrl(pageUrl: string): Promise<string> {
 }
 
 // Marker for --progress-template so progress lines are unambiguous on stdout.
-const PROGRESS_PREFIX = 'fetchr-progress:';
+const PROGRESS_PREFIX = 'download-progress:';
 const PROGRESS_LINE = new RegExp(`^${PROGRESS_PREFIX}\\s*([\\d.]+)%`);
 
 // Spawn yt-dlp and stream its stdout, reporting download progress (0..1) for

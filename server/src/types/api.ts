@@ -31,6 +31,40 @@ export interface Video {
   notes: string | null;
   local_path: string | null;
   desktop_id: DesktopId;
+  source_id: string | null;
+  channel_id: string | null;
+  channel_name: string | null;
+  published_at: string | null;
+}
+
+export type DiscoveryStatus = 'suggested' | 'dismissed' | 'added';
+
+export interface DiscoverySuggestion {
+  id: number;
+  desktop_id: DesktopId;
+  source_id: string;
+  page_url: string;
+  title: string;
+  description: string | null;
+  duration: number | null;
+  thumbnail_url: string | null;
+  channel_id: string;
+  channel_name: string;
+  published_at: string | null;
+  collection_id: number | null;
+  collection_name: string | null;
+  reason: string;
+  status: DiscoveryStatus;
+  discovered_at: string;
+  updated_at: string;
+}
+
+export interface DiscoveryRefreshResponse {
+  items: DiscoverySuggestion[];
+  creators_scanned: number;
+  videos_considered: number;
+  metadata_backfilled: number;
+  errors: string[];
 }
 
 export type JobKind =
@@ -68,4 +102,17 @@ export interface CollectionsResponse {
   items: Collection[];
   totalVideoCount: number;
   uncategorizedCount: number;
+}
+
+export interface CastDevice {
+  id: string;
+  name: string;
+  manufacturer: string | null;
+  modelName: string | null;
+  host: string;
+  location: string;
+}
+
+export interface CastDevicesResponse {
+  items: CastDevice[];
 }

@@ -19,11 +19,11 @@ export default function SettingsPage() {
     <div className="max-w-2xl mx-auto">
       <div className="mb-6">
         <h1 className="text-2xl font-extrabold tracking-tight" style={{ color: theme.text }}>Settings</h1>
-        <p className="text-sm mt-0.5" style={{ color: theme.text2 }}>Customize your Fetchr experience.</p>
+        <p className="text-sm mt-0.5" style={{ color: theme.text2 }}>Customize your Play experience.</p>
       </div>
 
       <ServerSection />
-      <SettingsSection title="Themes" description="Choose how Fetchr looks to you.">
+      <SettingsSection title="Themes" description="Choose how Play looks to you.">
         <ThemePicker />
       </SettingsSection>
       <DesksSection />

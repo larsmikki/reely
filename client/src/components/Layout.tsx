@@ -164,7 +164,7 @@ function MiniPlayerBar() {
 }
 
 function LogoMark({ size = 28 }: { size?: number }) {
-  return <img src="/favicon.svg" width={size} height={size} alt="Fetchr" className="shrink-0" />
+  return <img src="/favicon.svg" width={size} height={size} alt="Play" className="shrink-0" />
 }
 
 // Header chip that surfaces the job queue globally: spins with a count while
@@ -264,7 +264,7 @@ function MusicModeButton() {
   return (
     <button
       onClick={toggleMusicMode}
-      className="flex items-center justify-center w-9 h-9 rounded-lg transition-all duration-150"
+      className="flex items-center gap-1.5 px-2 sm:px-3 h-9 rounded-lg text-sm font-medium transition-all duration-150"
       style={{
         color: musicMode ? theme.accent : theme.text2,
         background: musicMode ? `${theme.accent}22` : 'transparent',
@@ -272,9 +272,10 @@ function MusicModeButton() {
       title={musicMode ? 'Music mode is on — playing without opening the video' : 'Turn on music mode'}
       aria-label="Toggle music mode"
     >
-      <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-        <path d="M18 3a1 1 0 0 0-1.196-.98l-10 2A1 1 0 0 0 6 5v9.114A4.369 4.369 0 0 0 5 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0 0 15 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" />
+      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 18V5.25L19.5 3v12.75M9 18c0 1.243-1.343 2.25-3 2.25S3 19.243 3 18s1.343-2.25 3-2.25S9 16.757 9 18zm10.5-2.25c0 1.243-1.343 2.25-3 2.25s-3-1.007-3-2.25 1.343-2.25 3-2.25 3 1.007 3 2.25z" />
       </svg>
+      <span className="hidden sm:inline">Audio Mode</span>
     </button>
   )
 }
@@ -297,7 +298,7 @@ export default function Layout() {
           <Link to="/" className="flex items-center gap-2.5 shrink-0" style={{ textDecoration: 'none' }}>
             <LogoMark size={28} />
             <span className="text-xl font-extrabold tracking-tight gradient-text select-none">
-              Fetchr
+              Play
             </span>
           </Link>
 
@@ -314,14 +315,30 @@ export default function Layout() {
                 }
                 title={`Switch to ${deskNames[d]} — a separate library with its own videos and collections`}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                  <path d="M3 4a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 13a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3zM13 3a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1V4a1 1 0 00-1-1h-3zM13 12a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1v-3a1 1 0 00-1-1h-3z" />
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75h6.5v6.5h-6.5v-6.5zM13.75 3.75h6.5v6.5h-6.5v-6.5zM13.75 13.75h6.5v6.5h-6.5v-6.5zM3.75 13.75h6.5v6.5h-6.5v-6.5z" />
                 </svg>
                 <span className="hidden sm:inline">{deskNames[d]}</span>
               </button>
             ))}
 
             <ActivityIndicator />
+
+            <Link
+              to="/discover"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150"
+              style={
+                location.pathname === '/discover'
+                  ? { background: `${theme.accent}22`, color: theme.accent }
+                  : { color: theme.text2 }
+              }
+              title="Discover new videos from creators in your library"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3zM18.5 14l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2z" />
+              </svg>
+              <span className="hidden sm:inline">Discover</span>
+            </Link>
 
             <MusicModeButton />
 
@@ -334,8 +351,9 @@ export default function Layout() {
                   : { color: theme.text2 }
               }
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.343 3.94c.09-.542.56-.94 1.11-.94h1.093c.55 0 1.02.398 1.11.94l.149.894c.063.379.32.696.673.846.084.036.167.074.249.115.343.17.75.146 1.071-.064l.758-.493a1.125 1.125 0 0 1 1.43.139l.773.772c.389.389.447.998.139 1.431l-.493.758c-.21.321-.234.728-.064 1.071.041.082.079.165.115.249.15.353.467.61.846.673l.894.149c.542.09.94.56.94 1.11v1.093c0 .55-.398 1.02-.94 1.11l-.894.149c-.379.063-.696.32-.846.673a6.91 6.91 0 0 1-.115.249c-.17.343-.146.75.064 1.071l.493.758c.308.433.25 1.042-.139 1.431l-.773.772a1.125 1.125 0 0 1-1.43.139l-.758-.493c-.321-.21-.728-.234-1.071-.064a6.91 6.91 0 0 1-.249.115c-.353.15-.61.467-.673.846l-.149.894c-.09.542-.56.94-1.11.94h-1.093c-.55 0-1.02-.398-1.11-.94l-.149-.894a1.125 1.125 0 0 0-.673-.846 6.91 6.91 0 0 1-.249-.115c-.343-.17-.75-.146-1.071.064l-.758.493a1.125 1.125 0 0 1-1.43-.139l-.773-.772a1.125 1.125 0 0 1-.139-1.431l.493-.758c.21-.321.234-.728.064-1.071a6.91 6.91 0 0 1-.115-.249 1.125 1.125 0 0 0-.846-.673l-.894-.149A1.125 1.125 0 0 1 3 12.674v-1.093c0-.55.398-1.02.94-1.11l.894-.149c.379-.063.696-.32.846-.673.036-.084.074-.167.115-.249.17-.343.146-.75-.064-1.071l-.493-.758a1.125 1.125 0 0 1 .139-1.431l.773-.772a1.125 1.125 0 0 1 1.43-.139l.758.493c.321.21.728.234 1.071.064.082-.041.165-.079.249-.115.353-.15.61-.467.673-.846l.149-.894z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z" />
               </svg>
               <span className="hidden sm:inline">Settings</span>
             </Link>

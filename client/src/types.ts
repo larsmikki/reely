@@ -10,4 +10,9 @@ export type {
   JobStatus,
   PaginatedResponse,
   CollectionsResponse,
+  CastDevice,
+  CastDevicesResponse,
+  DiscoveryStatus,
+  DiscoverySuggestion,
+  DiscoveryRefreshResponse,
 } from '../../server/src/types/api'

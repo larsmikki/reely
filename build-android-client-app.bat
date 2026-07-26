@@ -1,6 +1,6 @@
 @echo off
 setlocal
-REM Builds the Fetchr Android app end to end and drops the APK into data\
+REM Builds the Play Android app end to end and drops the APK into data\
 REM where the server offers it for download (Settings -> Android App).
 cd /d "%~dp0"
 
@@ -26,7 +26,7 @@ cd ..\..
 
 echo [5/5] Publishing APK to apk\ (picked up by the Docker build)...
 if not exist apk mkdir apk
-copy /Y "client\android\app\build\outputs\apk\debug\fetchr-client.apk" "apk\fetchr-client.apk" >nul
+copy /Y "client\android\app\build\outputs\apk\debug\play-client.apk" "apk\play-client.apk" >nul
 if errorlevel 1 goto :fail
 
 echo.

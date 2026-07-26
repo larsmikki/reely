@@ -5,7 +5,7 @@ import SettingsSection, { FieldLabel } from '@/components/settings/SettingsSecti
 import { getServerUrl, isNativeApp, setServerUrl } from '@/platform'
 
 // Only rendered in the native (Capacitor) app, where the client bundle is
-// local and needs to be told where the Fetchr server lives.
+// local and needs to be told where the Play server lives.
 export default function ServerSection() {
   const { theme } = useTheme()
   const [url, setUrl] = useState(getServerUrl())
@@ -34,7 +34,7 @@ export default function ServerSection() {
   return (
     <SettingsSection
       title="Server"
-      description="Where this app finds your Fetchr server."
+      description="Where this app finds your Play server."
     >
       <FieldLabel htmlFor="server-url">Server address</FieldLabel>
       <div className="flex flex-wrap gap-2 items-center">
@@ -54,10 +54,10 @@ export default function ServerSection() {
         <p className="text-xs font-medium mt-2" style={{ color: '#16a34a' }}>✓ Connected — server saved</p>
       )}
       {status === 'fail' && (
-        <p className="text-xs font-medium mt-2" style={{ color: '#dc2626' }}>Could not reach a Fetchr server at that address</p>
+        <p className="text-xs font-medium mt-2" style={{ color: '#dc2626' }}>Could not reach a Play server at that address</p>
       )}
       <p className="text-[11px] mt-2" style={{ color: theme.text2 }}>
-        Include protocol and port — e.g. https://fetchr.tail1234.ts.net or http://192.168.1.10:3030.
+        Include protocol and port — e.g. https://play.tail1234.ts.net or http://192.168.1.10:3030.
       </p>
     </SettingsSection>
   )

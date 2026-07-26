@@ -76,7 +76,7 @@ router.get('/android-app/download', async (_req: Request, res: Response) => {
     res.status(404).json({ error: 'No APK available — run build-android-client-app.bat first' });
     return;
   }
-  res.download(apk.path, 'fetchr-client.apk', err => {
+  res.download(apk.path, 'play-client.apk', err => {
     if (err && !res.headersSent) {
       res.status(500).json({ error: 'Failed to send APK' });
     }
